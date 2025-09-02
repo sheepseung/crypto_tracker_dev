@@ -1,0 +1,65 @@
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.2.0'
+    id 'io.spring.dependency-management' version '1.1.4'
+}
+
+group = 'com.crypto'
+version = '1.0.0'
+sourceCompatibility = '17'
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+ext {
+    flinkVersion = '1.18.1'
+}
+
+dependencies {
+    // Spring Boot Starters
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
+    
+    // Swagger/OpenAPI Documentation
+    implementation 'org.springdoc:springdoc-openapi-starter-webmvc-ui:2.2.0'
+    
+    // Flink Dependencies
+    implementation "org.apache.flink:flink-streaming-java:${flinkVersion}"
+    implementation "org.apache.flink:flink-clients:${flinkVersion}"
+    
+    // 애플리케이션에 특화된 커넥터 및 라이브러리는 implementation으로 JAR에 포함
+    implementation "org.apache.flink:flink-connector-kafka:3.0.2-1.18"
+    implementation "org.apache.flink:flink-connector-base:${flinkVersion}"
+    implementation "org.apache.flink:flink-table-api-java-bridge:${flinkVersion}"
+    implementation "org.apache.flink:flink-statebackend-rocksdb:${flinkVersion}"
+    
+    // Flink Web UI (로컬 개발 및 테스트 환경용)
+    runtimeOnly "org.apache.flink:flink-runtime-web:${flinkVersion}"
+    
+    // Test Dependencies
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testImplementation "org.apache.flink:flink-test-utils:${flinkVersion}"
+    testImplementation "org.apache.flink:flink-streaming-java:${flinkVersion}:tests"
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+// Flink 클러스터에 제출할 'thin' Job JAR를 생성하기 위한 설정
+// 이 설정으로 인해 'java -jar'로 단독 실행은 불가능함
+bootJar {
+    enabled = false
+}
+
+jar {
+    enabled = true
+    archiveClassifier = ''
+}

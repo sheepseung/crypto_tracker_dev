@@ -1,0 +1,16 @@
+# 데이터 수집 도구 (scripts/producer.py용)
+kafka-python>=2.0.2
+websockets>=11.0.3
+aiohttp>=3.9.0
+
+# 데이터 처리 및 분석
+pandas>=2.1.0
+numpy>=1.24.0
+
+# 로깅 및 유틸리티
+python-json-logger>=2.0.7
+
+# 개발 도구
+pytest>=7.4.0
+black>=23.0.0
+flake8>=6.0.0

@@ -1,0 +1,87 @@
+server:
+  port: 8082
+
+spring:
+  application:
+    name: crypto-flink-spring
+  profiles:
+    active: dev
+
+# Job 실행 플래그
+jobs:
+  rawLogger:
+    enabled: true
+  cryptoStreaming:
+    enabled: false
+  tradeIntensity:
+    enabled: false
+  whaleDetection:
+    enabled: false
+
+# Kafka 설정
+kafka:
+  bootstrap-servers: localhost:9092
+  input-topic: crypto-trades
+  output-topic: crypto-analysis
+  group-id: crypto-flink-group
+
+# Flink 설정
+flink:
+  checkpoint:
+    interval: 10000 # 체크포인트 간격 (ms)
+    timeout: 60000 # 체크포인트 타임아웃 (ms)
+    min-pause: 5000 # 최소 체크포인트 간격 (ms)
+    max-concurrent: 1 # 동시 체크포인트 수
+  parallelism: 1 # 병렬 처리 수
+
+# 고래 감지 설정
+whale:
+  detection:
+    threshold: 0.5 # 고래 움직임 감지 임계치 (BTC)
+    window:
+      size: 5 # 슬라이딩 윈도우 크기 (초)
+      slide: 1 # 슬라이딩 윈도우 슬라이드 간격 (초)
+    alert:
+      critical: 2.0 # CRITICAL 알림 임계치 (BTC)
+      high: 1.0 # HIGH 알림 임계치 (BTC)
+      medium: 0.5 # MEDIUM 알림 임계치 (BTC)
+    pattern:
+      massive-movement: 3.0 # 대량 움직임 패턴 임계치 (BTC)
+      significant-movement: 1.5 # 중요 움직임 패턴 임계치 (BTC)
+      moderate-movement: 0.8 # 보통 움직임 패턴 임계치 (BTC)
+
+# 체결강도 설정
+trade:
+  intensity:
+    window:
+      size: 60 # 슬라이딩 윈도우 크기 (초) - 1분
+      slide: 5 # 슬라이딩 윈도우 슬라이드 간격 (초) - 5초마다 이동
+    alert:
+      bullish: 150 # 강한 매수세 알림 임계치
+      bearish: 70 # 강한 매도세 알림 임계치
+      volatility: 50 # 변동성 알림 임계치
+    thresholds:
+      very-high: 150 # 매우 높은 체결강도
+      high: 120 # 높은 체결강도
+      medium: 90 # 보통 체결강도
+      low: 80 # 낮은 체결강도
+      very-low: 60 # 매우 낮은 체결강도
+
+# 로깅 설정
+logging:
+  level:
+    com.crypto.flink: INFO
+    org.apache.flink: INFO
+    org.apache.kafka: INFO
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+
+# Actuator 설정
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
