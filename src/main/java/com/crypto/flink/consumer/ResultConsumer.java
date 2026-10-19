@@ -3,6 +3,7 @@ package com.crypto.flink.consumer;
 import com.crypto.flink.dto.DetectionEvent;
 import com.crypto.flink.dto.TradeIntensity;
 import com.crypto.flink.store.DetectionEventRepository;
+import com.crypto.flink.store.IntensityBucketRepository;
 import com.crypto.flink.store.MetricsStore;
 import com.crypto.flink.stream.StreamBroadcaster;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -24,13 +25,16 @@ public class ResultConsumer {
     private final ObjectMapper objectMapper;
     private final MetricsStore metricsStore;
     private final DetectionEventRepository eventRepository;
+    private final IntensityBucketRepository bucketRepository;
     private final StreamBroadcaster broadcaster;
 
     public ResultConsumer(ObjectMapper objectMapper, MetricsStore metricsStore,
-            DetectionEventRepository eventRepository, StreamBroadcaster broadcaster) {
+            DetectionEventRepository eventRepository, IntensityBucketRepository bucketRepository,
+            StreamBroadcaster broadcaster) {
         this.objectMapper = objectMapper;
         this.metricsStore = metricsStore;
         this.eventRepository = eventRepository;
+        this.bucketRepository = bucketRepository;
         this.broadcaster = broadcaster;
     }
 
@@ -41,6 +45,8 @@ public class ResultConsumer {
         try {
             TradeIntensity intensity = objectMapper.readValue(json, TradeIntensity.class);
             metricsStore.put(intensity);
+            // 일별 요약용. 5분 경계 윈도우만 저장되고 나머지는 거른다
+            bucketRepository.saveIfAligned(intensity);
             broadcaster.publishMetric(intensity);
         } catch (JsonProcessingException e) {
             logger.warn("지표 메시지 파싱 실패: {}", json, e);

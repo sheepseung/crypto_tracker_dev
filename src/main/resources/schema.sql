@@ -31,5 +31,14 @@ CREATE TABLE IF NOT EXISTS detection_rule (
     updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+CREATE TABLE IF NOT EXISTS intensity_bucket (
+    code         VARCHAR(16)      NOT NULL,
+    window_end   BIGINT           NOT NULL,
+    buy_amount   DOUBLE PRECISION NOT NULL,
+    sell_amount  DOUBLE PRECISION NOT NULL,
+    trade_count  INTEGER          NOT NULL,
+    CONSTRAINT pk_intensity_bucket PRIMARY KEY (code, window_end)
+);
+
 CREATE INDEX IF NOT EXISTS idx_detection_event_code_time ON detection_event (code, event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_detection_event_type_time ON detection_event (type, event_time DESC);

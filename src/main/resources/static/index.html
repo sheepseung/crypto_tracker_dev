@@ -80,6 +80,14 @@
     </table>
     <p class="muted">1보다 크면 매수벽. 3배 이상 쏠림이 10초 이어지면 이벤트.</p>
   </section>
+  <section>
+    <h2>일별 요약 <span class="tabs" id="daytabs"></span> <span class="muted" id="daynote"></span></h2>
+    <table>
+      <thead><tr><th>종목</th><th>매수 금액</th><th>매도 금액</th><th>순매수</th><th>거래대금</th><th>체결강도</th><th>체결</th><th>수집률</th></tr></thead>
+      <tbody id="summaryrows"><tr><td colspan="8" class="empty">요약을 불러오는 중</td></tr></tbody>
+    </table>
+    <p class="muted" id="summaryevents"></p>
+  </section>
 </main>
 <script>
   const WINDOWS = [[60, '1분'], [300, '5분'], [900, '15분']];
@@ -162,6 +170,46 @@
       </tr>`).join('');
   }
 
+  let summaryOffset = 0;  // 0 = 오늘, 1 = 어제
+
+  function kstDate(offsetDays) {
+    const d = new Date(Date.now() + 9 * 3600 * 1000 - offsetDays * 86400 * 1000);
+    return d.toISOString().slice(0, 10);
+  }
+
+  function renderDayTabs() {
+    const el = document.getElementById('daytabs');
+    el.innerHTML = [[0, '오늘'], [1, '어제']].map(([o, label]) =>
+      `<button data-o="${o}" class="${o === summaryOffset ? 'active' : ''}">${label}</button>`).join('');
+    el.querySelectorAll('button').forEach(b => b.onclick = () => { summaryOffset = +b.dataset.o; renderDayTabs(); loadSummary(); });
+  }
+
+  async function loadSummary() {
+    const date = kstDate(summaryOffset);
+    const body = document.getElementById('summaryrows');
+    try {
+      const s = await (await fetch('/api/summary/daily?date=' + date)).json();
+      document.getElementById('daynote').textContent = `${s.date} KST${s.complete ? '' : ' · 하루치 미완'}`;
+      if (!s.codes.length) { body.innerHTML = '<tr><td colspan="8" class="empty">저장된 5분 버킷이 없습니다</td></tr>'; }
+      else body.innerHTML = s.codes.map(c => `
+        <tr>
+          <td class="code">${c.code.replace('KRW-', '')}${c.code === s.topNetBuyCode ? ' <span class="badge">순매수 1위</span>' : ''}${c.code === s.topVolumeCode ? ' <span class="badge">거래대금 1위</span>' : ''}</td>
+          <td class="buy">${fmtKrw(c.buyAmount)}</td>
+          <td class="sell">${fmtKrw(c.sellAmount)}</td>
+          <td class="${c.netAmount >= 0 ? 'buy' : 'sell'}">${signed(c.netAmount)}</td>
+          <td>${fmtKrw(c.totalAmount)}</td>
+          <td>${c.intensity.toFixed(1)}</td>
+          <td>${c.tradeCount.toLocaleString()}</td>
+          <td class="muted">${(c.coverage * 100).toFixed(0)}%</td>
+        </tr>`).join('');
+      const types = Object.entries(s.eventsByType).map(([t, n]) => `${t} ${n}`).join(' · ');
+      document.getElementById('summaryevents').textContent = s.eventCount
+        ? `감지 이벤트 ${s.eventCount}건: ${types}` : '감지 이벤트 없음';
+    } catch (e) {
+      body.innerHTML = '<tr><td colspan="8" class="empty">요약을 불러오지 못했습니다</td></tr>';
+    }
+  }
+
   function eventItem(e) {
     const li = document.createElement('li');
     li.innerHTML = `<div class="when">${e.eventTimeAt ? e.eventTimeAt.slice(0, 19).replace('T', ' ') : ''}</div>
@@ -203,12 +251,17 @@
       renderOrderbooks();
     });
     es.addEventListener('orderbook', ev => { const o = JSON.parse(ev.data); orderbooks.set(o.code, o); renderOrderbooks(); });
+    es.addEventListener('summary', () => loadSummary());
+    es.addEventListener('event', () => loadSummary());
     es.addEventListener('metric', ev => { putMetric(JSON.parse(ev.data)); renderRows(); });
     es.addEventListener('premium', ev => { const p = JSON.parse(ev.data); premiums.set(p.code, p); renderPremiums(); });
     es.addEventListener('event', ev => prependEvent(JSON.parse(ev.data)));
   }
 
   renderTabs();
+  renderDayTabs();
+  loadSummary();
+  setInterval(loadSummary, 5 * 60 * 1000);
   connect();
 </script>
 </body>

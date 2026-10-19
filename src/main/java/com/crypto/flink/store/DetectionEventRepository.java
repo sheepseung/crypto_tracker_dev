@@ -65,6 +65,20 @@ public class DetectionEventRepository {
         return jdbc.query(sql.toString(), ROW_MAPPER, args.toArray());
     }
 
+    public record TypeCodeCount(String type, String code, int count) {
+    }
+
+    /** event_time 이 [from, to) 인 이벤트를 종류·종목별로 센다. */
+    public List<TypeCodeCount> countBetween(long fromInclusive, long toExclusive) {
+        return jdbc.query("""
+                SELECT type, code, COUNT(*) AS cnt FROM detection_event
+                WHERE event_time >= ? AND event_time < ?
+                GROUP BY type, code ORDER BY type, code
+                """,
+                (rs, i) -> new TypeCodeCount(rs.getString("type"), rs.getString("code"), rs.getInt("cnt")),
+                fromInclusive, toExclusive);
+    }
+
     private static DetectionEvent mapRow(ResultSet rs, int rowNum) throws SQLException {
         DetectionEvent event = new DetectionEvent();
         event.setType(rs.getString("type"));

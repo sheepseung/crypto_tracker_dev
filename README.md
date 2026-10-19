@@ -297,6 +297,10 @@ orderbook:
   cooldown-seconds: 600
 ```
 
+### 2-3. 일별 요약 (DailySummaryService)
+
+체결강도 5분 경계 윈도우를 `intensity_bucket` 테이블에 남기고(종목당 하루 288행), 하루(KST)치 매수·매도 금액, 순매수, 거래대금, 체결강도, 체결 수를 종목별로 합친다. 감지 이벤트는 종류·종목별 건수로 센다. `GET /api/summary/daily?date=YYYY-MM-DD`(비우면 오늘)와 대시보드 "일별 요약" 패널(오늘·어제)에서 본다. 매일 00:05 KST 에 전날 요약을 로그와 SSE 로 내보낸다. 버킷이 95% 미만이면 `complete: false` 로 표시한다.
+
 ### 3. 조회 API (ResultConsumer → MetricsStore · PostgreSQL)
 
 Spring이 `crypto-metrics`와 `crypto-events`를 소비해 체결강도는 메모리에 최신 값만, 감지 이벤트는 PostgreSQL `detection_event` 테이블에 담는다. API는 Flink 상태를 직접 읽지 않고 이 저장소만 본다. 같은 이벤트가 다시 와도 `(type, code, event_time)` 고유 제약으로 한 번만 남는다.
@@ -307,6 +311,7 @@ GET /api/intensity/{code}                      # 한 종목의 모든 구간. �
 GET /api/events?code=&type=&since=&limit=50    # 감지 이벤트 최신순. since: ISO-8601 또는 epoch ms (기본 최근 24시간)
 GET /api/premium                               # 종목별 김치 프리미엄 최신 값
 GET /api/orderbook                             # 종목별 호가 쏠림 최신 스냅샷
+GET /api/summary/daily?date=2026-10-19         # 하루(KST) 요약. 비우면 오늘
 ```
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html

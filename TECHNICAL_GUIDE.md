@@ -42,6 +42,7 @@
 | `stream` | SSE 연결 관리 | `StreamBroadcaster` |
 | `premium` | 김치 프리미엄 (Flink 밖, Spring 스케줄) | `BinancePriceFeed`, `ExchangeRateFeed`, `UpbitLastPriceStore`, `KimchiPremiumService` |
 | `orderbook` | 호가 쏠림 (Flink 밖, 호가 토픽 소비) | `Orderbook`, `OrderbookImbalance`, `ImbalanceDetector`, `OrderbookService` |
+| `summary` | 일별 요약 (5분 버킷·이벤트 이력 집계, 00:05 스케줄) | `DailySummary`, `DailySummaryService` |
 | `controller` | REST·SSE 엔드포인트 | `IntensityController`, `EventsController`, `RulesController`, `StreamController` |
 | `util` | 한국 시간 포맷 | `KstTime` |
 
@@ -118,6 +119,7 @@
 ## 5. API 계층
 
 - `ResultConsumer`: spring-kafka 리스너 둘. 지표는 `MetricsStore.put`(종목·구간별 최신 `windowEnd`만 남김) 뒤 SSE로 전파. 이벤트는 `DetectionEventRepository.save` 가 true(중복 아님)일 때만 SSE로 전파.
+- `IntensityBucketRepository`: 300초 윈도우 중 끝이 5분 경계에 떨어지는 것만 `intensity_bucket`에 넣는다(기본키 `(code, window_end)`). 겹치지 않는 버킷이라 더하면 하루치가 된다. `DailySummaryService`가 `(자정, 다음 자정]` 범위로 합친다. 자정에 끝나는 버킷은 그 전날 것이다.
 - `DetectionEventRepository`: `(type, code, event_time)` 고유 제약. 중복 삽입은 `DuplicateKeyException`을 잡아 false 로 돌린다. 스키마는 `schema.sql`이 기동마다 실행(`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`).
 - `StreamBroadcaster`: `SseEmitter` 목록. 연결 직후 `StreamController`가 `snapshot`(지표 전체 + 최근 이벤트 50건)을 보내고, 이후 `metric`·`event`. 15초마다 주석 하트비트. 보내다 실패하면 목록에서 뺀다.
 - `static/index.html`: 의존성 없는 한 장. `EventSource`가 끊기면 브라우저가 재접속하고 snapshot으로 다시 채운다.
