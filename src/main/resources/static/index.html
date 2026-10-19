@@ -547,6 +547,16 @@
   async function loadEvents() {
     try { events = await (await fetch('/api/events?limit=' + MAX_EVENTS)).json(); renderEvents(); } catch (e) { /* 다음 주기에 */ }
   }
+  // 카드는 SSE snapshot 으로 채우는데, Cloudflare 터널이 SSE 첫 응답을 20초 넘게 붙잡는다.
+  // 그동안 카드가 비지 않도록 같은 내용을 HTTP 로 먼저 가져온다. SSE 가 먼저 왔으면 그쪽이 최신이라 덮지 않는다
+  async function loadSnapshot() {
+    const get = url => fetch(url).then(r => r.json()).catch(() => []);
+    const [ms, ps, os] = await Promise.all([get('/api/intensity'), get('/api/premium'), get('/api/orderbook')]);
+    ms.forEach(putMetric);
+    ps.forEach(p => { if (!premiums.has(p.code)) premiums.set(p.code, p); });
+    os.forEach(o => { if (!orderbooks.has(o.code)) orderbooks.set(o.code, o); });
+    renderCards(); renderRows(); renderQuotes(); renderTierBreakdown();
+  }
 
   /* ---------- 성적표 ---------- */
   let scoreDays = 7;
@@ -625,6 +635,7 @@
   loadTierSpec().then(() => { renderTierControls(); renderTierBreakdown(); loadCharts(); });
   renderTierControls();
   renderCards(); renderRows(); renderQuotes(); renderEvents();
+  loadSnapshot(); loadEvents();
   setInterval(() => { loadEvents(); loadScorecard(); }, 60 * 1000);
   showView(['flow', 'events', 'metrics', 'summary'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'flow');
   loadSummary(); setInterval(loadSummary, 5 * 60 * 1000); setInterval(loadCharts, 60 * 1000);
