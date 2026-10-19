@@ -32,6 +32,9 @@ public class FlinkJobConfig {
     @Value("${kafka.dead-letter-topic:crypto-trades-dlq}")
     private String deadLetterTopic;
 
+    @Value("${kafka.metrics-topic:crypto-metrics}")
+    private String metricsTopic;
+
     /**
      * Kafka 소스 설정
      */
@@ -60,6 +63,15 @@ public class FlinkJobConfig {
     @Bean
     public KafkaSink<String> deadLetterSink() {
         return stringSink(deadLetterTopic);
+    }
+
+    /**
+     * 주기적으로 갱신되는 지표(체결강도 등)를 보내는 싱크.
+     * 감지 이벤트와 토픽을 나눠야 소비하는 쪽이 종류별로 보존 기간과 처리 방식을 달리할 수 있다.
+     */
+    @Bean
+    public KafkaSink<String> metricsSink() {
+        return stringSink(metricsTopic);
     }
 
     private KafkaSink<String> stringSink(String topic) {

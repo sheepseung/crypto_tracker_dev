@@ -1,75 +1,43 @@
 package com.crypto.flink.dto;
 
-import java.time.LocalDateTime;
-
 /**
- * 실시간 체결강도(Trade Intensity) 데이터 전송 객체
- * 
- * 체결강도 = (총 매수 체결량 / 총 매도 체결량) * 100
- * - 100 이상: 매수 우위
- * - 100 미만: 매도 우위
- * - 150 이상: 강한 매수세
- * - 70 이하: 강한 매도세
+ * 한 종목의 한 집계 구간에 대한 체결강도 지표.
+ * 금액은 모두 KRW. Flink POJO 요건(기본 생성자, getter/setter)을 지킨다.
  */
 public class TradeIntensity {
 
-    private String timestamp; // 계산 시점
-    private String code; // 암호화폐 코드
-    private String windowStart; // 윈도우 시작 시간
-    private String windowEnd; // 윈도우 종료 시간
-    private Integer windowSizeSeconds; // 윈도우 크기 (초)
+    // 매도 체결이 없으면 체결강도가 무한대라 JSON 으로 못 내보내므로 이 값으로 막는다
+    public static final double MAX_INTENSITY = 9999.99;
 
-    private Double totalBuyVolume; // 총 매수 체결량
-    private Double totalSellVolume; // 총 매도 체결량
-    private Double totalVolume; // 총 체결량
-    private Double intensityScore; // 체결강도 점수 (100 기준)
-    private Double intensityPercentage; // 체결강도 백분율
+    private String code;
+    private int windowSeconds;
+    private long windowStart;
+    private long windowEnd;
+    private String windowEndAt;
+    private double buyAmount;
+    private double sellAmount;
+    private double totalAmount;
+    private double netAmount;
+    private double buyVolume;
+    private double sellVolume;
+    private int tradeCount;
+    private double intensity;
+    private double buyRatio;
+    private long lastTradeTimestamp;
 
-    private String marketSentiment; // 시장 심리 (BULLISH, BEARISH, NEUTRAL)
-    private String intensityLevel; // 강도 레벨 (VERY_HIGH, HIGH, MEDIUM, LOW, VERY_LOW)
-    private String trendDirection; // 트렌드 방향 (RISING, FALLING, STABLE)
-    private Double trendStrength; // 트렌드 강도 (0.0 ~ 100.0)
-
-    private String alertLevel; // 알림 레벨 (CRITICAL, HIGH, MEDIUM, LOW)
-    private String alertMessage; // 알림 메시지
-    private Boolean isAlertTriggered; // 알림 발생 여부
-
-    // 기본 생성자
     public TradeIntensity() {
     }
 
-    // 전체 파라미터 생성자
-    public TradeIntensity(String timestamp, String code, String windowStart, String windowEnd,
-            Integer windowSizeSeconds, Double totalBuyVolume, Double totalSellVolume,
-            Double totalVolume, Double intensityScore, Double intensityPercentage,
-            String marketSentiment, String intensityLevel, String trendDirection,
-            Double trendStrength, String alertLevel, String alertMessage, Boolean isAlertTriggered) {
-        this.timestamp = timestamp;
-        this.code = code;
-        this.windowStart = windowStart;
-        this.windowEnd = windowEnd;
-        this.windowSizeSeconds = windowSizeSeconds;
-        this.totalBuyVolume = totalBuyVolume;
-        this.totalSellVolume = totalSellVolume;
-        this.totalVolume = totalVolume;
-        this.intensityScore = intensityScore;
-        this.intensityPercentage = intensityPercentage;
-        this.marketSentiment = marketSentiment;
-        this.intensityLevel = intensityLevel;
-        this.trendDirection = trendDirection;
-        this.trendStrength = trendStrength;
-        this.alertLevel = alertLevel;
-        this.alertMessage = alertMessage;
-        this.isAlertTriggered = isAlertTriggered;
+    public static double intensityOf(double buyAmount, double sellAmount) {
+        if (sellAmount <= 0) {
+            return buyAmount <= 0 ? 100.0 : MAX_INTENSITY;
+        }
+        return Math.min(buyAmount / sellAmount * 100.0, MAX_INTENSITY);
     }
 
-    // Getter & Setter
-    public String getTimestamp() {
-        return timestamp;
-    }
-
-    public void setTimestamp(String timestamp) {
-        this.timestamp = timestamp;
+    public static double buyRatioOf(double buyAmount, double sellAmount) {
+        double total = buyAmount + sellAmount;
+        return total <= 0 ? 50.0 : buyAmount / total * 100.0;
     }
 
     public String getCode() {
@@ -80,183 +48,121 @@ public class TradeIntensity {
         this.code = code;
     }
 
-    public String getWindowStart() {
+    public int getWindowSeconds() {
+        return windowSeconds;
+    }
+
+    public void setWindowSeconds(int windowSeconds) {
+        this.windowSeconds = windowSeconds;
+    }
+
+    public long getWindowStart() {
         return windowStart;
     }
 
-    public void setWindowStart(String windowStart) {
+    public void setWindowStart(long windowStart) {
         this.windowStart = windowStart;
     }
 
-    public String getWindowEnd() {
+    public long getWindowEnd() {
         return windowEnd;
     }
 
-    public void setWindowEnd(String windowEnd) {
+    public void setWindowEnd(long windowEnd) {
         this.windowEnd = windowEnd;
     }
 
-    public Integer getWindowSizeSeconds() {
-        return windowSizeSeconds;
+    public String getWindowEndAt() {
+        return windowEndAt;
     }
 
-    public void setWindowSizeSeconds(Integer windowSizeSeconds) {
-        this.windowSizeSeconds = windowSizeSeconds;
+    public void setWindowEndAt(String windowEndAt) {
+        this.windowEndAt = windowEndAt;
     }
 
-    public Double getTotalBuyVolume() {
-        return totalBuyVolume;
+    public double getBuyAmount() {
+        return buyAmount;
     }
 
-    public void setTotalBuyVolume(Double totalBuyVolume) {
-        this.totalBuyVolume = totalBuyVolume;
+    public void setBuyAmount(double buyAmount) {
+        this.buyAmount = buyAmount;
     }
 
-    public Double getTotalSellVolume() {
-        return totalSellVolume;
+    public double getSellAmount() {
+        return sellAmount;
     }
 
-    public void setTotalSellVolume(Double totalSellVolume) {
-        this.totalSellVolume = totalSellVolume;
+    public void setSellAmount(double sellAmount) {
+        this.sellAmount = sellAmount;
     }
 
-    public Double getTotalVolume() {
-        return totalVolume;
+    public double getTotalAmount() {
+        return totalAmount;
     }
 
-    public void setTotalVolume(Double totalVolume) {
-        this.totalVolume = totalVolume;
+    public void setTotalAmount(double totalAmount) {
+        this.totalAmount = totalAmount;
     }
 
-    public Double getIntensityScore() {
-        return intensityScore;
+    public double getNetAmount() {
+        return netAmount;
     }
 
-    public void setIntensityScore(Double intensityScore) {
-        this.intensityScore = intensityScore;
+    public void setNetAmount(double netAmount) {
+        this.netAmount = netAmount;
     }
 
-    public Double getIntensityPercentage() {
-        return intensityPercentage;
+    public double getBuyVolume() {
+        return buyVolume;
     }
 
-    public void setIntensityPercentage(Double intensityPercentage) {
-        this.intensityPercentage = intensityPercentage;
+    public void setBuyVolume(double buyVolume) {
+        this.buyVolume = buyVolume;
     }
 
-    public String getMarketSentiment() {
-        return marketSentiment;
+    public double getSellVolume() {
+        return sellVolume;
     }
 
-    public void setMarketSentiment(String marketSentiment) {
-        this.marketSentiment = marketSentiment;
+    public void setSellVolume(double sellVolume) {
+        this.sellVolume = sellVolume;
     }
 
-    public String getIntensityLevel() {
-        return intensityLevel;
+    public int getTradeCount() {
+        return tradeCount;
     }
 
-    public void setIntensityLevel(String intensityLevel) {
-        this.intensityLevel = intensityLevel;
+    public void setTradeCount(int tradeCount) {
+        this.tradeCount = tradeCount;
     }
 
-    public String getTrendDirection() {
-        return trendDirection;
+    public double getIntensity() {
+        return intensity;
     }
 
-    public void setTrendDirection(String trendDirection) {
-        this.trendDirection = trendDirection;
+    public void setIntensity(double intensity) {
+        this.intensity = intensity;
     }
 
-    public Double getTrendStrength() {
-        return trendStrength;
+    public double getBuyRatio() {
+        return buyRatio;
     }
 
-    public void setTrendStrength(Double trendStrength) {
-        this.trendStrength = trendStrength;
+    public void setBuyRatio(double buyRatio) {
+        this.buyRatio = buyRatio;
     }
 
-    public String getAlertLevel() {
-        return alertLevel;
+    public long getLastTradeTimestamp() {
+        return lastTradeTimestamp;
     }
 
-    public void setAlertLevel(String alertLevel) {
-        this.alertLevel = alertLevel;
-    }
-
-    public String getAlertMessage() {
-        return alertMessage;
-    }
-
-    public void setAlertMessage(String alertMessage) {
-        this.alertMessage = alertMessage;
-    }
-
-    public Boolean getIsAlertTriggered() {
-        return isAlertTriggered;
-    }
-
-    public void setIsAlertTriggered(Boolean isAlertTriggered) {
-        this.isAlertTriggered = isAlertTriggered;
-    }
-
-    // 헬퍼 메서드
-    public Double getNetVolume() {
-        return totalBuyVolume - totalSellVolume;
-    }
-
-    public Double getBuyRatio() {
-        return totalVolume > 0 ? totalBuyVolume / totalVolume : 0.0;
-    }
-
-    public Double getSellRatio() {
-        return totalVolume > 0 ? totalSellVolume / totalVolume : 0.0;
-    }
-
-    public Boolean isBullish() {
-        return "BULLISH".equals(marketSentiment);
-    }
-
-    public Boolean isBearish() {
-        return "BEARISH".equals(marketSentiment);
-    }
-
-    public Boolean isNeutral() {
-        return "NEUTRAL".equals(marketSentiment);
-    }
-
-    public String getIntensityDescription() {
-        if (intensityScore >= 150)
-            return "매우 강한 매수세";
-        if (intensityScore >= 120)
-            return "강한 매수세";
-        if (intensityScore >= 110)
-            return "약한 매수세";
-        if (intensityScore >= 90)
-            return "중립";
-        if (intensityScore >= 80)
-            return "약한 매도세";
-        if (intensityScore >= 50)
-            return "강한 매도세";
-        return "매우 강한 매도세";
-    }
-
-    public String getTrendDescription() {
-        switch (trendDirection) {
-            case "RISING":
-                return "상승 추세";
-            case "FALLING":
-                return "하락 추세";
-            case "STABLE":
-                return "안정";
-            default:
-                return "알 수 없음";
-        }
+    public void setLastTradeTimestamp(long lastTradeTimestamp) {
+        this.lastTradeTimestamp = lastTradeTimestamp;
     }
 
     @Override
     public String toString() {
-        return String.format("TradeIntensity{code='%s', intensity=%.2f, sentiment='%s', trend='%s', alert='%s'}",
-                code, intensityScore, marketSentiment, trendDirection, alertLevel);
+        return String.format("TradeIntensity{code='%s', window=%ds, intensity=%.2f, net=%.0f, count=%d, end=%s}",
+                code, windowSeconds, intensity, netAmount, tradeCount, windowEndAt);
     }
 }

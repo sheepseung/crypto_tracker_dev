@@ -282,45 +282,26 @@ GET /api/whale/stats                    # 고래 움직임 통계
 GET /api/whale/alerts/{level}?limit=10  # 알림 레벨별 필터링
 ```
 
-### 3. 체결강도 분석 (TradeIntensityController)
+### 3. 체결강도 지표 (TradeIntensityService)
 
-#### 주요 기능
+종목별로 최근 1분·5분·15분 구간의 매수·매도 체결 금액(KRW)을 5초마다 집계해 `crypto-metrics` 토픽에 쓴다. 체결 시각(`trade_timestamp`) 기준 이벤트 시간 윈도우라 재시작 후 Kafka에 쌓인 체결을 다시 읽어도 구간이 밀리지 않는다.
 
-- **실시간 체결강도 계산**: 매수/매도 비율 기반 체결강도 점수 산출
-- **시장 심리 분석**: BULLISH, BEARISH, NEUTRAL 시장 심리 판단
-- **트렌드 방향 예측**: RISING, FALLING, STABLE 트렌드 방향 분석
-- **변동성 모니터링**: 체결강도 변화를 통한 시장 변동성 측정
-
-#### 설정 파라미터
+- `intensity`: 매수 금액 ÷ 매도 금액 × 100. 매도가 없으면 9999.99로 막는다
+- `buyRatio`: 매수 금액 ÷ 전체 금액 × 100
+- `netAmount`: 매수 금액 − 매도 금액 (순매수)
 
 ```yaml
 trade:
   intensity:
-    window:
-      size: 60 # 슬라이딩 윈도우 크기 (초) - 1분
-      slide: 5 # 슬라이딩 윈도우 슬라이드 간격 (초) - 5초마다 이동
-    alert:
-      bullish: 150 # 강한 매수세 알림 임계치
-      bearish: 70 # 강한 매도세 알림 임계치
-      volatility: 50 # 변동성 알림 임계치
-    thresholds:
-      very-high: 150 # 매우 높은 체결강도
-      high: 120 # 높은 체결강도
-      medium: 90 # 보통 체결강도
-      low: 80 # 낮은 체결강도
-      very-low: 60 # 매우 낮은 체결강도
+    windows-seconds: 60,300,900 # 집계 구간(초)
+    slide-seconds: 5 # 갱신 주기(초)
 ```
 
-#### API 엔드포인트
+```json
+{"code":"KRW-BTC","windowSeconds":300,"windowStart":1718000000000,"windowEnd":1718000300000,"windowEndAt":"2024-06-10T15:05:00+09:00","buyAmount":812345000.0,"sellAmount":650000000.0,"totalAmount":1462345000.0,"netAmount":162345000.0,"buyVolume":8.1,"sellVolume":6.5,"tradeCount":412,"intensity":124.98,"buyRatio":55.55,"lastTradeTimestamp":1718000299870}
+```
 
-```
-GET /api/trade-intensity/health                    # 서비스 상태 확인
-GET /api/trade-intensity/recent?limit=10          # 최근 체결강도 조회
-GET /api/trade-intensity/{code}?limit=20          # 특정 암호화폐 체결강도
-GET /api/trade-intensity/stats                    # 체결강도 통계
-GET /api/trade-intensity/sentiment/{sentiment}    # 시장 심리별 필터링
-GET /api/trade-intensity/monitor                  # 실시간 모니터링
-```
+REST API와 대시보드는 이 토픽을 소비해 제공할 예정이며 아직 없다.
 
 ## 🔧 설정
 

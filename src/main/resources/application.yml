@@ -24,6 +24,7 @@ kafka:
   input-topic: crypto-trades
   output-topic: crypto-analysis
   dead-letter-topic: crypto-trades-dlq
+  metrics-topic: crypto-metrics
   group-id: crypto-flink-group
 
 # Flink 설정
@@ -54,19 +55,8 @@ whale:
 # 체결강도 설정
 trade:
   intensity:
-    window:
-      size: 60 # 슬라이딩 윈도우 크기 (초) - 1분
-      slide: 5 # 슬라이딩 윈도우 슬라이드 간격 (초) - 5초마다 이동
-    alert:
-      bullish: 150 # 강한 매수세 알림 임계치
-      bearish: 70 # 강한 매도세 알림 임계치
-      volatility: 50 # 변동성 알림 임계치
-    thresholds:
-      very-high: 150 # 매우 높은 체결강도
-      high: 120 # 높은 체결강도
-      medium: 90 # 보통 체결강도
-      low: 80 # 낮은 체결강도
-      very-low: 60 # 매우 낮은 체결강도
+    windows-seconds: 60,300,900 # 집계 구간(초). 1분·5분·15분
+    slide-seconds: 5 # 갱신 주기(초)
 
 # 로깅 설정
 logging:
