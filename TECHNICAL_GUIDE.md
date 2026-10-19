@@ -44,6 +44,7 @@
 | `orderbook` | 호가 쏠림 (Flink 밖, 호가 토픽 소비) | `Orderbook`, `OrderbookImbalance`, `ImbalanceDetector`, `OrderbookService` |
 | `summary` | 일별 요약 (5분 버킷·이벤트 이력 집계, 00:05 스케줄) | `DailySummary`, `DailySummaryService` |
 | `context` | 평소 대비 백분위 (7일 5분 버킷 분포) | `ContextService` |
+| `scorecard` | 신호 성적표 (가격 틱 기록, 이벤트 뒤 수익률 채움, 집계) | `OutcomeFiller`, `ScorecardService` |
 | `controller` | REST·SSE 엔드포인트 | `IntensityController`, `EventsController`, `RulesController`, `StreamController` |
 | `util` | 한국 시간 포맷 | `KstTime` |
 
@@ -135,6 +136,10 @@
 ### 5.2 호가 쏠림 (Flink 밖)
 
 `OrderbookService`가 `crypto-orderbook`을 latest 부터 읽어 종목별 `OrderbookImbalance`(총 매수÷매도 잔량, 상위 N호가 금액, 스프레드)를 유지한다. 호가는 상태 스냅샷이라 윈도우 집계가 필요 없다. 대시보드에는 종목당 1초에 한 번만 보낸다. `ImbalanceDetector`는 쏠림이 `hold-seconds` 동안 끊기지 않고 이어졌을 때 한 번 `ORDERBOOK_IMBALANCE`를 내고 종목·방향별 쿨다운을 둔다. 순간값은 노이즈라서다. 상태는 메모리뿐이고 Kafka 리스너 스레드 하나에서만 쓰므로 동기화하지 않는다.
+
+### 5.3 신호 성적표 (Flink 밖)
+
+`OutcomeFiller`가 30초마다 `UpbitLastPriceStore`의 종목별 마지막 체결가를 `price_tick`(기본키 `(code, ts)`, 14일 보관)에 남기고, 1분마다 `return_60m`이 비어 있고 5분이 지난 이벤트를 200건씩 가져와 이벤트 시점 가격(이벤트에 있으면 그것, 없으면 가장 가까운 틱)과 5·15·60분 뒤 틱으로 수익률(%)을 채운다. 틱 허용 오차는 90초다. 수집이 끊긴 구간은 비워 두고 다음에 다시 시도한다. `ScorecardService`는 성적이 하나라도 있는 이벤트를 종류(옵션: 종목)별로 묶어 건수·평균·적중률을 낸다. 기대 방향 표는 `expectedDirection`에 있다.
 
 ## 6. 감지 규칙과 Job 재시작
 

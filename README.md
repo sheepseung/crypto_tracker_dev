@@ -305,6 +305,10 @@ orderbook:
 
 종목별 최근 7일 5분 버킷 분포에서 지금 5분 체결강도·거래대금·순매수가 몇 번째인지 0~100으로 준다(`GET /api/context`). 카드에 "상위 n%" 칩으로 보인다. 분포는 5분마다 다시 읽는다.
 
+### 2-6. 신호 성적표 (G2)
+
+이벤트가 난 뒤 5·15·60분 가격 변화를 자동으로 기록해 신호 종류별 건수, 평균 수익률, 방향 적중률을 보여 준다(`GET /api/scorecard?days=7&byCode=false`). 30초마다 종목별 마지막 체결가를 `price_tick`에 남기고, 1분마다 성적이 비어 있는 이벤트를 찾아 `detection_event`의 `price_at`·`return_5m`·`return_15m`·`return_60m`을 채운다. 기대 방향은 급등=상승, 급락=하락, 대량·집중 체결·호가 쏠림·주체 엇갈림=side(매수벽·고래 매수면 상승)이고, 거래량 급증과 김프는 방향이 없어 평균 변동폭만 낸다. 대시보드 이벤트 탭 위에 성적표가 있고 이벤트 항목 꼬리에 "15분 +0.6%" 식으로 붙는다. 다른 앱은 신호만 주고 성적은 보여 주지 않는다.
+
 ### 2-3. 일별 요약 (DailySummaryService)
 
 체결강도 5분 경계 윈도우를 `intensity_bucket` 테이블에 남기고(종목당 하루 288행), 하루(KST)치 매수·매도 금액, 순매수, 거래대금, 체결강도, 체결 수를 종목별로 합친다. 감지 이벤트는 종류·종목별 건수로 센다. `GET /api/summary/daily?date=YYYY-MM-DD`(비우면 오늘)와 대시보드 "일별 요약" 패널(오늘·어제)에서 본다. 매일 00:05 KST 에 전날 요약을 로그와 SSE 로 내보낸다. 버킷이 95% 미만이면 `complete: false` 로 표시한다.
@@ -323,6 +327,7 @@ GET /api/summary/daily?date=2026-10-19         # 하루(KST) 요약. 비우면 �
 GET /api/history?code=KRW-BTC&hours=6          # 최근 N시간 5분 버킷 (매수 비율·순매수 추이 그래프용)
 GET /api/history/cumulative?date=              # 하루 누적 순매수·거래대금·주체별 누적, 5분마다 한 점
 GET /api/context                               # 종목별 체결강도·거래대금·순매수의 평소 대비 백분위
+GET /api/scorecard?days=7&byCode=false         # 신호 성적표 (건수·평균 수익률·적중률)
 ```
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html

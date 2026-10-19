@@ -189,7 +189,15 @@
 
   <section class="view" id="view-events">
     <div class="panel">
-      <h2><svg class="ic"><use href="#i-bell"/></svg>감지 이벤트 <span class="hint">최신순, 최대 100건</span></h2>
+      <h2><svg class="ic"><use href="#i-scale"/></svg>신호 성적표 <span class="seg" id="scoreDays"></span><span class="hint">이벤트 뒤 가격 변화. 적중 = 기대 방향과 같은 부호</span></h2>
+      <table>
+        <thead><tr><th>신호</th><th>건수</th><th>5분 평균</th><th>15분 평균</th><th>60분 평균</th><th>적중률 15분</th><th>적중률 60분</th></tr></thead>
+        <tbody id="scorerows"></tbody>
+      </table>
+      <p class="foot">방향이 없는 신호(거래량 급증·김프)는 적중률 대신 평균 변동폭(절댓값)을 보여 준다. 성적은 이벤트 5분 뒤부터 차례로 채워진다.</p>
+    </div>
+    <div class="panel">
+      <h2><svg class="ic"><use href="#i-bell"/></svg>감지 이벤트 <span class="hint">최신순, 최대 100건 · 꼬리는 5·15·60분 뒤 수익률</span></h2>
       <div class="filters" id="filters"></div>
       <ul id="events"></ul>
     </div>
@@ -315,6 +323,7 @@
     location.hash = name;
     if (name === 'flow') loadCharts();
     if (name === 'summary') loadSummary();
+    if (name === 'events') loadScorecard();
   }
   document.getElementById('nav').querySelectorAll('button').forEach(b => b.onclick = () => showView(b.dataset.view));
 
@@ -419,8 +428,30 @@
     const li = document.createElement('li');
     const at = e.eventTimeAt || '', today = kstDate(0) === at.slice(0, 10);
     const ic = (TYPES[e.type] || [0, 0, 'bell'])[2];
-    li.innerHTML = `<span class="evic ${e.type}">${icon(ic)}</span><span class="msg"><span class="badge ${e.type}">${typeLabel(e.type)}</span>${e.message || ''}</span><span class="when">${today ? at.slice(11, 19) : at.slice(5, 16).replace('T', ' ')}</span>`;
+    const tail = [['5분', e.return5m], ['15분', e.return15m], ['60분', e.return60m]].filter(([, r]) => r != null)
+      .map(([l, r]) => `${l} <b class="${cls(r)}">${pct(r)}</b>`).join(' · ');
+    li.innerHTML = `<span class="evic ${e.type}">${icon(ic)}</span><span class="msg"><span class="badge ${e.type}">${typeLabel(e.type)}</span>${e.message || ''}${tail ? `<span class="muted" style="font-size:12px"> — ${tail}</span>` : ''}</span><span class="when">${today ? at.slice(11, 19) : at.slice(5, 16).replace('T', ' ')}</span>`;
     return li;
+  }
+  async function loadEvents() {
+    try { events = await (await fetch('/api/events?limit=' + MAX_EVENTS)).json(); renderEvents(); } catch (e) { /* 다음 주기에 */ }
+  }
+
+  /* ---------- 성적표 ---------- */
+  let scoreDays = 7;
+  function renderScoreControls() { seg('scoreDays', [[1, '1일'], [7, '7일'], [30, '30일']], scoreDays, v => { scoreDays = +v; renderScoreControls(); loadScorecard(); }); }
+  async function loadScorecard() {
+    const body = document.getElementById('scorerows');
+    try {
+      const rows = await (await fetch('/api/scorecard?days=' + scoreDays)).json();
+      if (!rows.length) { body.innerHTML = `<tr><td colspan="7" style="padding:0">${emptyState('scale', '아직 성적이 채워진 이벤트가 없어요. 이벤트 5분 뒤부터 쌓여요.')}</td></tr>`; return; }
+      const avg = h => h.avgReturn == null ? '<span class="faint">—</span>' : `<span class="${cls(h.avgReturn)}">${pct(h.avgReturn)}</span><span class="faint" style="font-size:11px"> (${h.filled})</span>`;
+      const hit = (h, d) => h.filled === 0 ? '<span class="faint">—</span>' : d ? `${h.hitRate.toFixed(0)}%` : `<span class="muted">±${h.avgAbsReturn.toFixed(2)}%</span>`;
+      body.innerHTML = rows.map(r => `
+        <tr class="num"><td><span class="badge ${r.type}">${typeLabel(r.type)}</span></td><td>${r.count}</td>
+          <td>${avg(r.m5)}</td><td>${avg(r.m15)}</td><td>${avg(r.m60)}</td>
+          <td>${hit(r.m15, r.directional)}</td><td>${hit(r.m60, r.directional)}</td></tr>`).join('');
+    } catch (e) { body.innerHTML = '<tr><td colspan="7" class="empty-row">성적표를 불러오지 못했습니다</td></tr>'; }
   }
   function renderEvents() {
     const full = document.getElementById('events'), mini = document.getElementById('events-mini');
@@ -479,8 +510,9 @@
     es.addEventListener('summary', () => loadSummary());
   }
 
-  renderTabs(); renderDayTabs(); renderFlowControls();
+  renderTabs(); renderDayTabs(); renderFlowControls(); renderScoreControls();
   renderCards(); renderRows(); renderQuotes(); renderEvents();
+  setInterval(() => { loadEvents(); loadScorecard(); }, 60 * 1000);
   showView(['flow', 'events', 'metrics', 'summary'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'flow');
   loadSummary(); setInterval(loadSummary, 5 * 60 * 1000); setInterval(loadCharts, 60 * 1000);
   loadContext(); setInterval(loadContext, 30 * 1000);

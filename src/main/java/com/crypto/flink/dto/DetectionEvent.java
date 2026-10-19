@@ -34,6 +34,12 @@ public class DetectionEvent {
     private Double baselineAmount;
     private Double ratio;
     private String message;
+    // 아래는 저장 뒤 성적표가 채우는 값. Flink 가 내보낼 때는 비어 있다
+    private Long id;
+    private Double priceAt;
+    private Double return5m;
+    private Double return15m;
+    private Double return60m;
 
     public DetectionEvent() {
     }
@@ -260,6 +266,46 @@ public class DetectionEvent {
 
     public void setRatio(Double ratio) {
         this.ratio = ratio;
+    }
+
+    public Long getId() {
+        return id;
+    }
+
+    public void setId(Long id) {
+        this.id = id;
+    }
+
+    public Double getPriceAt() {
+        return priceAt;
+    }
+
+    public void setPriceAt(Double priceAt) {
+        this.priceAt = priceAt;
+    }
+
+    public Double getReturn5m() {
+        return return5m;
+    }
+
+    public void setReturn5m(Double return5m) {
+        this.return5m = return5m;
+    }
+
+    public Double getReturn15m() {
+        return return15m;
+    }
+
+    public void setReturn15m(Double return15m) {
+        this.return15m = return15m;
+    }
+
+    public Double getReturn60m() {
+        return return60m;
+    }
+
+    public void setReturn60m(Double return60m) {
+        this.return60m = return60m;
     }
 
     public String getMessage() {

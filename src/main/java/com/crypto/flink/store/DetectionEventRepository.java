@@ -13,6 +13,7 @@ import java.util.List;
 
 /**
  * 감지 이벤트 이력. 재시작 후에도 되짚어 볼 수 있도록 DB 에 남긴다.
+ * 성적표(price_at, return_*)는 저장 뒤 OutcomeFiller 가 채운다.
  */
 @Repository
 public class DetectionEventRepository {
@@ -79,8 +80,37 @@ public class DetectionEventRepository {
                 fromInclusive, toExclusive);
     }
 
+    /** 60분 수익률이 아직 없고 event_time 이 before 이전인 이벤트. 오래된 순. */
+    public List<DetectionEvent> findOutcomePending(long before, int limit) {
+        return jdbc.query("""
+                SELECT * FROM detection_event
+                WHERE return_60m IS NULL AND event_time <= ?
+                ORDER BY event_time ASC LIMIT ?
+                """, ROW_MAPPER, before, limit);
+    }
+
+    /** 채울 수 있는 값만 넣는다. null 은 기존 값을 유지한다. */
+    public void updateOutcome(long id, Double priceAt, Double return5m, Double return15m, Double return60m) {
+        jdbc.update("""
+                UPDATE detection_event SET
+                  price_at = COALESCE(?, price_at), return_5m = COALESCE(?, return_5m),
+                  return_15m = COALESCE(?, return_15m), return_60m = COALESCE(?, return_60m)
+                WHERE id = ?
+                """, priceAt, return5m, return15m, return60m, id);
+    }
+
+    /** event_time 이 from 이후이고 성적이 하나라도 있는 이벤트. 성적표 집계용. */
+    public List<DetectionEvent> findScored(long fromInclusive) {
+        return jdbc.query("""
+                SELECT * FROM detection_event
+                WHERE event_time >= ? AND (return_5m IS NOT NULL OR return_15m IS NOT NULL OR return_60m IS NOT NULL)
+                ORDER BY event_time DESC
+                """, ROW_MAPPER, fromInclusive);
+    }
+
     private static DetectionEvent mapRow(ResultSet rs, int rowNum) throws SQLException {
         DetectionEvent event = new DetectionEvent();
+        event.setId(rs.getLong("id"));
         event.setType(rs.getString("type"));
         event.setCode(rs.getString("code"));
         event.setEventTime(rs.getLong("event_time"));
@@ -96,6 +126,10 @@ public class DetectionEventRepository {
         event.setBaselineAmount(nullableDouble(rs, "baseline_amount"));
         event.setRatio(nullableDouble(rs, "ratio"));
         event.setMessage(rs.getString("message"));
+        event.setPriceAt(nullableDouble(rs, "price_at"));
+        event.setReturn5m(nullableDouble(rs, "return_5m"));
+        event.setReturn15m(nullableDouble(rs, "return_15m"));
+        event.setReturn60m(nullableDouble(rs, "return_60m"));
         return event;
     }
 

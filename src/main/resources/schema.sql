@@ -47,5 +47,19 @@ ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS mid_sell DOUBLE PRECISION 
 ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS retail_buy DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS retail_sell DOUBLE PRECISION NOT NULL DEFAULT 0;
 
+-- 신호 성적표용. 이벤트 시점과 5·15·60분 뒤 가격을 채운다
+ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS price_at DOUBLE PRECISION;
+ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS return_5m DOUBLE PRECISION;
+ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS return_15m DOUBLE PRECISION;
+ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS return_60m DOUBLE PRECISION;
+
+-- 종목별 가격 틱. 30초마다 마지막 체결가를 남겨 이벤트 뒤 가격을 찾는 데 쓴다
+CREATE TABLE IF NOT EXISTS price_tick (
+    code  VARCHAR(16)      NOT NULL,
+    ts    BIGINT           NOT NULL,
+    price DOUBLE PRECISION NOT NULL,
+    CONSTRAINT pk_price_tick PRIMARY KEY (code, ts)
+);
+
 CREATE INDEX IF NOT EXISTS idx_detection_event_code_time ON detection_event (code, event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_detection_event_type_time ON detection_event (type, event_time DESC);
