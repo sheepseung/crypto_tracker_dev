@@ -60,6 +60,21 @@ docker compose down                 # 내리기 (이력 DB 는 postgres-data 볼
 
 종목을 바꾸려면 `docker-compose.yml`의 `producer` 환경 변수 `UPBIT_MARKETS`를 고치고 `docker compose up -d producer`. 같은 파일 그대로 VPS에 복사해 같은 명령으로 띄울 수 있다. 외부에 공개하려면 도메인·HTTPS·인증은 따로 붙여야 한다.
 
+#### 0-1. 외부에 열기 (Cloudflare 빠른 터널, 도메인 없이)
+
+포트를 열지 않고 이 컴퓨터의 앱을 임시 주소(`https://<무작위>.trycloudflare.com`)로 공개한다. 계정도 도메인도 필요 없고 HTTPS 는 Cloudflare 가 붙인다. 측근에게 주소를 보내 피드백을 받는 용도다.
+
+```bash
+cp .env.example .env                       # ADMIN_TOKEN 을 채운다 (openssl rand -hex 24)
+docker compose --profile public up -d --build
+docker compose logs cloudflared 2>&1 | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1   # 공개 주소
+```
+
+- 주소는 `cloudflared` 를 다시 띄울 때마다 바뀐다. 고정 주소가 필요해지면 도메인을 사서 이름 있는 터널로 바꾼다(Zero Trust → Tunnels, 토큰 방식).
+- `ADMIN_TOKEN` 이 있으면 규칙 변경 API(PUT·DELETE)는 `X-Admin-Token` 헤더 없이 401 이다. 대시보드와 조회 API 는 누구나 본다. Kafka UI(8080)·PostgreSQL(5432)은 터널 밖이라 안 보인다.
+- 이 컴퓨터가 잠들면 끊긴다. 시스템 설정의 잠자기 방지를 켜거나 터미널에서 `caffeinate -s` 를 띄워 둔다.
+- 끄기: `docker compose stop cloudflared`. 앱은 그대로 로컬에서 돈다.
+
 아래 1~9는 앱을 Gradle로 직접 돌리는 개발용 절차다.
 
 ### 1. 사전 요구사항
@@ -354,6 +369,8 @@ PUT    /api/rules/default      # 기본 규칙 전체 교체 (모든 값 필수)
 PUT    /api/rules/KRW-DOGE     # 종목 덮어쓰기. 준 값만 바꾼다
 DELETE /api/rules/KRW-DOGE     # 덮어쓰기 삭제, 다시 기본 규칙
 ```
+
+`ADMIN_TOKEN` 이 설정돼 있으면 PUT·DELETE 는 `X-Admin-Token` 헤더가 있어야 한다. 비어 있으면(로컬 개발) 막지 않는다.
 
 ```bash
 curl -X PUT localhost:8082/api/rules/KRW-DOGE -H 'Content-Type: application/json' \

@@ -139,12 +139,16 @@ logging:
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
 
-# Actuator 설정
+# 공개 배포에서 상태를 바꾸는 API(/api/** 의 PUT·POST·DELETE)를 지키는 토큰. 비어 있으면 막지 않는다
+admin:
+  token: ${ADMIN_TOKEN:}
+
+# Actuator 설정. 공개 배포를 감안해 health 만 연다
 management:
   endpoints:
     web:
       exposure:
-        include: health,info,metrics
+        include: health
   endpoint:
     health:
       show-details: always

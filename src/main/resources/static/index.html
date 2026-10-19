@@ -85,6 +85,9 @@
   .seg button.active { color: var(--text); background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
   .chart { position: relative; height: 260px; }
   .chart.tall { height: 300px; }
+  /* 두 패널이 나란한 줄에서는 그래프가 남는 높이를 채운다 */
+  .row-2 > .panel { display: flex; flex-direction: column; }
+  .row-2 > .panel .chart.fill { flex: 1; min-height: 300px; height: auto; }
   .legend { display: flex; gap: 14px; font-size: 12px; color: var(--sub); flex-wrap: wrap; }
   .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 
@@ -182,7 +185,7 @@
     <div class="row-2">
       <div class="panel">
         <h2><svg class="ic"><use href="#i-activity"/></svg>매수 비율 추이 <span class="seg" id="flowCoin"></span> <span class="seg" id="flowHours"></span><span class="right">점은 감지 이벤트</span></h2>
-        <div class="chart tall"><canvas id="ratioChart"></canvas></div>
+        <div class="chart tall fill"><canvas id="ratioChart"></canvas></div>
         <p class="foot">5분 구간 매수 금액 ÷ 전체 금액. 50%가 중립. 이벤트 점에 마우스를 올리면 내용이 보인다.</p>
       </div>
       <div class="panel">
@@ -358,12 +361,14 @@
 
   /* ---------- 그래프 ---------- */
   const gridColor = '#eef0f3';
-  function baseOptions(yFmt) {
+  // x 축은 항상 명시한 범위로 그린다. 점이 하나뿐이면 Chart.js 가 범위를 며칠로 벌려 버린다
+  const kstDayStart = () => { const d = new Date(Date.now() + 9 * 3600e3); d.setUTCHours(0, 0, 0, 0); return d.getTime() - 9 * 3600e3; };
+  function baseOptions(yFmt, xMin, xMax) {
     return {
       responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'nearest', intersect: false },
       plugins: { legend: { display: false }, tooltip: { backgroundColor: '#191f28', titleColor: '#fff', bodyColor: '#e5e8eb', padding: 10, cornerRadius: 10, displayColors: true } },
       scales: {
-        x: { type: 'linear', grid: { color: gridColor }, border: { display: false }, ticks: { color: '#8b95a1', maxTicksLimit: 8, callback: v => hhmm(v) } },
+        x: { type: 'linear', min: xMin, max: xMax, grid: { color: gridColor }, border: { display: false }, ticks: { color: '#8b95a1', maxTicksLimit: 8, callback: v => hhmm(v) } },
         y: { grid: { color: gridColor }, border: { display: false }, ticks: { color: '#8b95a1', callback: yFmt } }
       }
     };
@@ -386,9 +391,12 @@
     const note = document.querySelector('#tierChart').parentElement.nextElementSibling;
     if (!live.length) { note.textContent = '주체별 5분 버킷이 아직 없어요. 5분마다 한 점씩 쌓여요.'; if (tierChart) { tierChart.data = { datasets: [] }; tierChart.update('none'); } return; }
     note.textContent = '고래와 개미의 선이 반대로 갈리면 주체 엇갈림이다. 15분 동안 서로 30% 넘게 반대로 쏠리면 이벤트로 남는다. 업비트는 합계만 보여 준다.';
-    const datasets = tierSpec.names.map((name, i) => ({ label: name, data: live.map(p => ({ x: p.t, y: p.cumulativeTierNet[i] })), borderColor: TIER_COLORS[i], borderWidth: i === 0 || i === n - 1 ? 2.5 : 1.5, pointRadius: 0, tension: 0.25 }));
+    const sparse = live.length < 3;
+    const datasets = tierSpec.names.map((name, i) => ({ label: name, data: live.map(p => ({ x: p.t, y: p.cumulativeTierNet[i] })), borderColor: TIER_COLORS[i], backgroundColor: TIER_COLORS[i], borderWidth: i === 0 || i === n - 1 ? 2.5 : 1.5, pointRadius: sparse ? 4 : 0, tension: 0.25 }));
     document.getElementById('tierLegend').innerHTML = tierSpec.names.map((name, i) => `<span><i style="background:${TIER_COLORS[i]}"></i>${name}</span>`).join('');
-    const opts = baseOptions(v => fmtKrw(v));
+    if (sparse) note.textContent = `주체별 버킷이 ${live.length}개뿐이에요. 5분마다 한 점씩 쌓이면 선이 이어져요.`;
+    // 점이 적을 땐 첫 점부터, 충분하면 0시부터 그린다
+    const opts = baseOptions(v => fmtKrw(v), sparse ? live[0].t - 30 * 60e3 : kstDayStart(), Date.now());
     opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => ` ${i.dataset.label} ${signed(i.parsed.y)}` };
     const data = { datasets };
     if (!tierChart) tierChart = new Chart(document.getElementById('tierChart'), { type: 'line', data, options: opts, plugins: [zeroLinePlugin] });
@@ -396,9 +404,10 @@
   }
   function drawCumulative(byCode) {
     const codesSorted = Object.keys(byCode).sort(byOrder);
-    const datasets = codesSorted.map(code => ({ label: sym(code), data: byCode[code].map(p => ({ x: p.t, y: p.cumulativeNet })), borderColor: COLORS[code] || '#8b95a1', borderWidth: 2, pointRadius: 0, tension: 0.25 }));
+    const sparse = Math.max(0, ...codesSorted.map(c => byCode[c].length)) < 3;
+    const datasets = codesSorted.map(code => ({ label: sym(code), data: byCode[code].map(p => ({ x: p.t, y: p.cumulativeNet })), borderColor: COLORS[code] || '#8b95a1', backgroundColor: COLORS[code] || '#8b95a1', borderWidth: 2, pointRadius: sparse ? 4 : 0, tension: 0.25 }));
     document.getElementById('cumLegend').innerHTML = codesSorted.map(c => `<span><i style="background:${COLORS[c] || '#8b95a1'}"></i>${sym(c)}</span>`).join('');
-    const opts = baseOptions(v => fmtKrw(v));
+    const opts = baseOptions(v => fmtKrw(v), kstDayStart(), Date.now());
     opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => ` ${i.dataset.label} ${signed(i.parsed.y)}` };
     opts.plugins.zeroLine = true;
     const data = { datasets };
@@ -408,10 +417,13 @@
   const zeroLinePlugin = { id: 'zeroLine', afterDraw(c) { const y = c.scales.y.getPixelForValue(0); if (!isFinite(y)) return; const ctx = c.ctx; ctx.save(); ctx.strokeStyle = '#b0b8c1'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(c.chartArea.left, y); ctx.lineTo(c.chartArea.right, y); ctx.stroke(); ctx.restore(); } };
   const midLinePlugin = { id: 'midLine', afterDraw(c) { const y = c.scales.y.getPixelForValue(50); const ctx = c.ctx; ctx.save(); ctx.strokeStyle = '#b0b8c1'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(c.chartArea.left, y); ctx.lineTo(c.chartArea.right, y); ctx.stroke(); ctx.restore(); } };
   function drawRatio(points, evs) {
-    const line = { label: '매수 비율', data: points.map(p => ({ x: p.t, y: p.buyRatio, p })), borderColor: COLORS[flowCoin] || '#3182f6', backgroundColor: 'rgba(49,130,246,.08)', borderWidth: 2, pointRadius: 0, tension: 0.25, fill: { target: { value: 50 } } };
+    const line = { label: '매수 비율', data: points.map(p => ({ x: p.t, y: p.buyRatio, p })), borderColor: COLORS[flowCoin] || '#3182f6', backgroundColor: 'rgba(49,130,246,.08)', borderWidth: 2, pointRadius: points.length < 3 ? 4 : 0, tension: 0.25, fill: { target: { value: 50 } } };
     const nearest = t => { let best = null; for (const p of points) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p; return best ? best.buyRatio : 50; };
     const marks = { label: '이벤트', type: 'scatter', data: evs.map(e => ({ x: e.eventTime, y: nearest(e.eventTime), e })), pointRadius: 6, pointHoverRadius: 8, pointBackgroundColor: evs.map(e => (TYPES[e.type] || [0, '#8b95a1'])[1]), pointBorderColor: '#fff', pointBorderWidth: 2 };
-    const opts = baseOptions(v => v + '%');
+    // 데이터가 선택한 시간 범위보다 짧으면 첫 점부터 그려 박스를 채운다
+    const rangeStart = Date.now() - flowHours * 3600e3;
+    const firstT = points.length ? points[0].t - 5 * 60e3 : rangeStart;
+    const opts = baseOptions(v => v + '%', Math.max(rangeStart, firstT), Date.now());
     opts.scales.y.min = 0; opts.scales.y.max = 100;
     opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => i.raw.e ? ` ${typeLabel(i.raw.e.type)} · ${i.raw.e.message}` : ` 매수 비율 ${i.parsed.y.toFixed(1)}% · 거래대금 ${fmtKrw(i.raw.p.totalAmount)}` };
     const data = { datasets: [line, marks] };

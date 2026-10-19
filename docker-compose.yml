@@ -94,6 +94,20 @@ services:
       SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/crypto
       SPRING_DATASOURCE_USERNAME: crypto
       SPRING_DATASOURCE_PASSWORD: crypto
+      # 비어 있으면 규칙 변경 API 가 열려 있다. 공개 배포에서는 .env 에 반드시 넣는다
+      ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+
+  # 외부 공개 (선택). Cloudflare 빠른 터널이 app 으로 아웃바운드 연결을 열고 임시 주소(*.trycloudflare.com)를 준다.
+  # 계정·도메인·포트 개방이 없다. 주소는 재시작마다 바뀌며 로그에 찍힌다: docker compose logs cloudflared | grep trycloudflare
+  # 기동: docker compose --profile public up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    profiles: ["public"]
+    depends_on:
+      - app
+    command: tunnel --no-autoupdate --url http://app:8082
 
   # 업비트 체결 수집기. 끊기면 스스로 재접속하고, 프로세스가 죽으면 Docker 가 다시 띄운다
   producer:
