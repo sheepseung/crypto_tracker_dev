@@ -5,6 +5,7 @@ import org.apache.flink.api.common.functions.AggregateFunction;
 
 /**
  * 윈도우 안의 체결을 매수·매도 금액과 수량으로 누적한다.
+ * 체결 한 건의 금액으로 주체를 고래·중형·개미로 나눠 구간별 매수·매도도 따로 쌓는다. 업비트는 합계만 주므로 이게 차별점이다.
  * 결과는 누적기 그대로 넘기고, 종목과 윈도우 시간은 ProcessWindowFunction 이 붙인다.
  */
 public class TradeAmountAggregator
@@ -18,9 +19,23 @@ public class TradeAmountAggregator
         public double sellVolume;
         public int tradeCount;
         public long lastTradeTimestamp;
+        public double whaleBuy;
+        public double whaleSell;
+        public double midBuy;
+        public double midSell;
+        public double retailBuy;
+        public double retailSell;
 
         public Accumulator() {
         }
+    }
+
+    private final double whaleMinAmount;
+    private final double retailMaxAmount;
+
+    public TradeAmountAggregator(double whaleMinAmount, double retailMaxAmount) {
+        this.whaleMinAmount = whaleMinAmount;
+        this.retailMaxAmount = retailMaxAmount;
     }
 
     @Override
@@ -30,12 +45,21 @@ public class TradeAmountAggregator
 
     @Override
     public Accumulator add(CryptoTrade trade, Accumulator acc) {
-        if (trade.isBid()) {
-            acc.buyAmount += trade.getTradeAmount();
+        double amount = trade.getTradeAmount();
+        boolean bid = trade.isBid();
+        if (bid) {
+            acc.buyAmount += amount;
             acc.buyVolume += trade.getTradeVolume();
         } else {
-            acc.sellAmount += trade.getTradeAmount();
+            acc.sellAmount += amount;
             acc.sellVolume += trade.getTradeVolume();
+        }
+        if (amount >= whaleMinAmount) {
+            if (bid) acc.whaleBuy += amount; else acc.whaleSell += amount;
+        } else if (amount < retailMaxAmount) {
+            if (bid) acc.retailBuy += amount; else acc.retailSell += amount;
+        } else {
+            if (bid) acc.midBuy += amount; else acc.midSell += amount;
         }
         acc.tradeCount++;
         acc.lastTradeTimestamp = Math.max(acc.lastTradeTimestamp, trade.getTradeTimestamp());
@@ -49,13 +73,19 @@ public class TradeAmountAggregator
 
     @Override
     public Accumulator merge(Accumulator a, Accumulator b) {
-        Accumulator merged = new Accumulator();
-        merged.buyAmount = a.buyAmount + b.buyAmount;
-        merged.sellAmount = a.sellAmount + b.sellAmount;
-        merged.buyVolume = a.buyVolume + b.buyVolume;
-        merged.sellVolume = a.sellVolume + b.sellVolume;
-        merged.tradeCount = a.tradeCount + b.tradeCount;
-        merged.lastTradeTimestamp = Math.max(a.lastTradeTimestamp, b.lastTradeTimestamp);
-        return merged;
+        Accumulator m = new Accumulator();
+        m.buyAmount = a.buyAmount + b.buyAmount;
+        m.sellAmount = a.sellAmount + b.sellAmount;
+        m.buyVolume = a.buyVolume + b.buyVolume;
+        m.sellVolume = a.sellVolume + b.sellVolume;
+        m.tradeCount = a.tradeCount + b.tradeCount;
+        m.lastTradeTimestamp = Math.max(a.lastTradeTimestamp, b.lastTradeTimestamp);
+        m.whaleBuy = a.whaleBuy + b.whaleBuy;
+        m.whaleSell = a.whaleSell + b.whaleSell;
+        m.midBuy = a.midBuy + b.midBuy;
+        m.midSell = a.midSell + b.midSell;
+        m.retailBuy = a.retailBuy + b.retailBuy;
+        m.retailSell = a.retailSell + b.retailSell;
+        return m;
     }
 }

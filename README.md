@@ -297,6 +297,14 @@ orderbook:
   cooldown-seconds: 600
 ```
 
+### 2-4. 체결 주체 분해와 엇갈림 (G1)
+
+체결 한 건의 금액으로 고래(1천만 원 이상)·중형·개미(10만 원 미만)를 나눠 모든 체결강도 윈도우에 주체별 매수·매도 금액을 같이 싣는다(`whaleBuyAmount` 등, 경계는 `tiers.*`). 업비트는 합계만 준다. 대시보드 카드에 5분 고래·개미 순매수, 흐름 탭에 오늘 주체별 누적 순매수 그래프가 있다. 15분 구간에서 고래와 개미의 순매수 방향이 반대이고 각자 자기 거래대금의 30% 넘게 쏠리면 `TIER_DIVERGENCE` 이벤트를 낸다(종목·방향별 30분 간격, 표본이 고래 1억·개미 1천만 원 미만이면 판정 안 함).
+
+### 2-5. 평소 대비 백분위 (G4)
+
+종목별 최근 7일 5분 버킷 분포에서 지금 5분 체결강도·거래대금·순매수가 몇 번째인지 0~100으로 준다(`GET /api/context`). 카드에 "상위 n%" 칩으로 보인다. 분포는 5분마다 다시 읽는다.
+
 ### 2-3. 일별 요약 (DailySummaryService)
 
 체결강도 5분 경계 윈도우를 `intensity_bucket` 테이블에 남기고(종목당 하루 288행), 하루(KST)치 매수·매도 금액, 순매수, 거래대금, 체결강도, 체결 수를 종목별로 합친다. 감지 이벤트는 종류·종목별 건수로 센다. `GET /api/summary/daily?date=YYYY-MM-DD`(비우면 오늘)와 대시보드 "일별 요약" 패널(오늘·어제)에서 본다. 매일 00:05 KST 에 전날 요약을 로그와 SSE 로 내보낸다. 버킷이 95% 미만이면 `complete: false` 로 표시한다.
@@ -313,7 +321,8 @@ GET /api/premium                               # 종목별 김치 프리미엄 �
 GET /api/orderbook                             # 종목별 호가 쏠림 최신 스냅샷
 GET /api/summary/daily?date=2026-10-19         # 하루(KST) 요약. 비우면 오늘
 GET /api/history?code=KRW-BTC&hours=6          # 최근 N시간 5분 버킷 (매수 비율·순매수 추이 그래프용)
-GET /api/history/cumulative?date=              # 하루 누적 순매수·거래대금, 5분마다 한 점
+GET /api/history/cumulative?date=              # 하루 누적 순매수·거래대금·주체별 누적, 5분마다 한 점
+GET /api/context                               # 종목별 체결강도·거래대금·순매수의 평소 대비 백분위
 ```
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html

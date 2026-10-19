@@ -19,7 +19,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 
 /**
- * 종목별 체결강도·순매수 지표(F1)를 여러 구간으로 집계해 metrics 토픽에 쓴다.
+ * 종목별 체결강도·순매수 지표(F1)를 여러 구간으로 집계해 metrics 토픽에 쓴다. 주체별(고래·중형·개미) 금액도 같이 싣는다.
  */
 @Service
 public class TradeIntensityService implements FlinkPipeline {
@@ -29,16 +29,22 @@ public class TradeIntensityService implements FlinkPipeline {
     private final List<Integer> windowsSeconds;
     private final int slideSeconds;
     private final boolean enabled;
+    private final double whaleMinAmount;
+    private final double retailMaxAmount;
     private final KafkaSink<String> metricsSink;
 
     public TradeIntensityService(
             @Value("${trade.intensity.windows-seconds:60,300,900}") List<Integer> windowsSeconds,
             @Value("${trade.intensity.slide-seconds:5}") int slideSeconds,
             @Value("${jobs.tradeIntensity.enabled:true}") boolean enabled,
+            @Value("${tiers.whale-min-amount:10000000}") double whaleMinAmount,
+            @Value("${tiers.retail-max-amount:100000}") double retailMaxAmount,
             @Qualifier("metricsSink") KafkaSink<String> metricsSink) {
         this.windowsSeconds = windowsSeconds;
         this.slideSeconds = slideSeconds;
         this.enabled = enabled;
+        this.whaleMinAmount = whaleMinAmount;
+        this.retailMaxAmount = retailMaxAmount;
         this.metricsSink = metricsSink;
     }
 
@@ -54,7 +60,8 @@ public class TradeIntensityService implements FlinkPipeline {
 
     @Override
     public void attach(DataStream<CryptoTrade> trades) {
-        logger.info("체결강도 파이프라인 연결 - 구간 {}초, 갱신 {}초", windowsSeconds, slideSeconds);
+        logger.info("체결강도 파이프라인 연결 - 구간 {}초, 갱신 {}초, 고래 {}원 이상, 개미 {}원 미만",
+                windowsSeconds, slideSeconds, (long) whaleMinAmount, (long) retailMaxAmount);
         intensityStream(trades)
                 .map(new ToJsonMapper<>())
                 .name("TradeIntensity to JSON")
@@ -69,7 +76,7 @@ public class TradeIntensityService implements FlinkPipeline {
             DataStream<TradeIntensity> windowed = trades
                     .keyBy(CryptoTrade::getCode)
                     .window(SlidingEventTimeWindows.of(Time.seconds(windowSeconds), Time.seconds(slideSeconds)))
-                    .aggregate(new TradeAmountAggregator(), new IntensityWindowFunction())
+                    .aggregate(new TradeAmountAggregator(whaleMinAmount, retailMaxAmount), new IntensityWindowFunction())
                     .name("Trade Intensity " + windowSeconds + "s");
             merged = merged == null ? windowed : merged.union(windowed);
         }

@@ -9,7 +9,7 @@ import java.util.List;
 
 /**
  * 5분 경계에 떨어지는 체결강도 윈도우만 남긴다. 겹치지 않아 더하면 하루치가 된다.
- * 종목당 하루 288행이라 가볍다.
+ * 종목당 하루 288행이라 가볍다. 주체별(고래·중형·개미) 금액도 같이 둔다.
  */
 @Repository
 public class IntensityBucketRepository {
@@ -30,28 +30,8 @@ public class IntensityBucketRepository {
         }
     }
 
-    private final JdbcTemplate jdbc;
-
-    public IntensityBucketRepository(JdbcTemplate jdbc) {
-        this.jdbc = jdbc;
-    }
-
-    /** 5분 구간이고 끝이 5분 경계에 떨어지는 윈도우만 받는다. 그 외는 false. 같은 버킷이 다시 오면 무시한다. */
-    public boolean saveIfAligned(TradeIntensity window) {
-        if (window.getWindowSeconds() != BUCKET_SECONDS || window.getWindowEnd() % (BUCKET_SECONDS * 1000L) != 0) {
-            return false;
-        }
-        try {
-            jdbc.update("INSERT INTO intensity_bucket (code, window_end, buy_amount, sell_amount, trade_count) VALUES (?, ?, ?, ?, ?)",
-                    window.getCode(), window.getWindowEnd(), window.getBuyAmount(), window.getSellAmount(),
-                    window.getTradeCount());
-            return true;
-        } catch (DuplicateKeyException e) {
-            return false;
-        }
-    }
-
-    public record Bucket(String code, long windowEnd, double buyAmount, double sellAmount, int tradeCount) {
+    public record Bucket(String code, long windowEnd, double buyAmount, double sellAmount, int tradeCount,
+            double whaleBuy, double whaleSell, double midBuy, double midSell, double retailBuy, double retailSell) {
         public double netAmount() {
             return buyAmount - sellAmount;
         }
@@ -67,17 +47,60 @@ public class IntensityBucketRepository {
         public double intensity() {
             return TradeIntensity.intensityOf(buyAmount, sellAmount);
         }
+
+        public double whaleNet() {
+            return whaleBuy - whaleSell;
+        }
+
+        public double midNet() {
+            return midBuy - midSell;
+        }
+
+        public double retailNet() {
+            return retailBuy - retailSell;
+        }
     }
 
-    /** window_end 가 (from, to] 인 버킷을 종목·시간순으로. 그래프용. */
+    private final JdbcTemplate jdbc;
+
+    public IntensityBucketRepository(JdbcTemplate jdbc) {
+        this.jdbc = jdbc;
+    }
+
+    /** 5분 구간이고 끝이 5분 경계에 떨어지는 윈도우만 받는다. 그 외는 false. 같은 버킷이 다시 오면 무시한다. */
+    public boolean saveIfAligned(TradeIntensity w) {
+        if (w.getWindowSeconds() != BUCKET_SECONDS || w.getWindowEnd() % (BUCKET_SECONDS * 1000L) != 0) {
+            return false;
+        }
+        try {
+            jdbc.update("""
+                    INSERT INTO intensity_bucket
+                      (code, window_end, buy_amount, sell_amount, trade_count,
+                       whale_buy, whale_sell, mid_buy, mid_sell, retail_buy, retail_sell)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    w.getCode(), w.getWindowEnd(), w.getBuyAmount(), w.getSellAmount(), w.getTradeCount(),
+                    w.getWhaleBuyAmount(), w.getWhaleSellAmount(), w.getMidBuyAmount(), w.getMidSellAmount(),
+                    w.getRetailBuyAmount(), w.getRetailSellAmount());
+            return true;
+        } catch (DuplicateKeyException e) {
+            return false;
+        }
+    }
+
+    /** window_end 가 (from, to] 인 버킷을 종목·시간순으로. 그래프·백분위용. */
     public List<Bucket> bucketsBetween(long fromExclusive, long toInclusive) {
         return jdbc.query("""
-                SELECT code, window_end, buy_amount, sell_amount, trade_count FROM intensity_bucket
+                SELECT code, window_end, buy_amount, sell_amount, trade_count,
+                       whale_buy, whale_sell, mid_buy, mid_sell, retail_buy, retail_sell
+                FROM intensity_bucket
                 WHERE window_end > ? AND window_end <= ?
                 ORDER BY code, window_end
                 """,
                 (rs, i) -> new Bucket(rs.getString("code"), rs.getLong("window_end"), rs.getDouble("buy_amount"),
-                        rs.getDouble("sell_amount"), rs.getInt("trade_count")),
+                        rs.getDouble("sell_amount"), rs.getInt("trade_count"),
+                        rs.getDouble("whale_buy"), rs.getDouble("whale_sell"), rs.getDouble("mid_buy"),
+                        rs.getDouble("mid_sell"), rs.getDouble("retail_buy"), rs.getDouble("retail_sell")),
                 fromExclusive, toInclusive);
     }
 

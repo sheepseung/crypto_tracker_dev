@@ -24,8 +24,27 @@ public class TradeIntensity {
     private double intensity;
     private double buyRatio;
     private long lastTradeTimestamp;
+    // 체결 한 건 금액으로 나눈 주체별 매수·매도 금액. 구간 경계는 설정(tiers.*)
+    private double whaleBuyAmount;
+    private double whaleSellAmount;
+    private double midBuyAmount;
+    private double midSellAmount;
+    private double retailBuyAmount;
+    private double retailSellAmount;
 
     public TradeIntensity() {
+    }
+
+    public double getWhaleNetAmount() {
+        return whaleBuyAmount - whaleSellAmount;
+    }
+
+    public double getMidNetAmount() {
+        return midBuyAmount - midSellAmount;
+    }
+
+    public double getRetailNetAmount() {
+        return retailBuyAmount - retailSellAmount;
     }
 
     public static double intensityOf(double buyAmount, double sellAmount) {
@@ -158,6 +177,54 @@ public class TradeIntensity {
 
     public void setLastTradeTimestamp(long lastTradeTimestamp) {
         this.lastTradeTimestamp = lastTradeTimestamp;
+    }
+
+    public double getWhaleBuyAmount() {
+        return whaleBuyAmount;
+    }
+
+    public void setWhaleBuyAmount(double whaleBuyAmount) {
+        this.whaleBuyAmount = whaleBuyAmount;
+    }
+
+    public double getWhaleSellAmount() {
+        return whaleSellAmount;
+    }
+
+    public void setWhaleSellAmount(double whaleSellAmount) {
+        this.whaleSellAmount = whaleSellAmount;
+    }
+
+    public double getMidBuyAmount() {
+        return midBuyAmount;
+    }
+
+    public void setMidBuyAmount(double midBuyAmount) {
+        this.midBuyAmount = midBuyAmount;
+    }
+
+    public double getMidSellAmount() {
+        return midSellAmount;
+    }
+
+    public void setMidSellAmount(double midSellAmount) {
+        this.midSellAmount = midSellAmount;
+    }
+
+    public double getRetailBuyAmount() {
+        return retailBuyAmount;
+    }
+
+    public void setRetailBuyAmount(double retailBuyAmount) {
+        this.retailBuyAmount = retailBuyAmount;
+    }
+
+    public double getRetailSellAmount() {
+        return retailSellAmount;
+    }
+
+    public void setRetailSellAmount(double retailSellAmount) {
+        this.retailSellAmount = retailSellAmount;
     }
 
     @Override

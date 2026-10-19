@@ -35,14 +35,15 @@ public class HistoryController {
     }
 
     public record Point(long t, double buyAmount, double sellAmount, double netAmount, double totalAmount,
-            double buyRatio, double intensity, int tradeCount) {
+            double buyRatio, double intensity, int tradeCount, double whaleNet, double midNet, double retailNet) {
         static Point of(Bucket b) {
             return new Point(b.windowEnd(), b.buyAmount(), b.sellAmount(), b.netAmount(), b.totalAmount(),
-                    b.buyRatio(), b.intensity(), b.tradeCount());
+                    b.buyRatio(), b.intensity(), b.tradeCount(), b.whaleNet(), b.midNet(), b.retailNet());
         }
     }
 
-    public record CumulativePoint(long t, double cumulativeNet, double cumulativeTotal) {
+    public record CumulativePoint(long t, double cumulativeNet, double cumulativeTotal,
+            double cumulativeWhaleNet, double cumulativeMidNet, double cumulativeRetailNet) {
     }
 
     @GetMapping
@@ -74,11 +75,14 @@ public class HistoryController {
         Map<String, List<CumulativePoint>> byCode = new LinkedHashMap<>();
         Map<String, double[]> running = new LinkedHashMap<>();
         for (Bucket b : buckets.bucketsBetween(from, to)) {
-            double[] sum = running.computeIfAbsent(b.code(), c -> new double[2]);
+            double[] sum = running.computeIfAbsent(b.code(), c -> new double[5]);
             sum[0] += b.netAmount();
             sum[1] += b.totalAmount();
+            sum[2] += b.whaleNet();
+            sum[3] += b.midNet();
+            sum[4] += b.retailNet();
             byCode.computeIfAbsent(b.code(), c -> new ArrayList<>())
-                    .add(new CumulativePoint(b.windowEnd(), sum[0], sum[1]));
+                    .add(new CumulativePoint(b.windowEnd(), sum[0], sum[1], sum[2], sum[3], sum[4]));
         }
         return byCode;
     }

@@ -35,6 +35,12 @@ public class IntensityWindowFunction
         result.setIntensity(TradeIntensity.intensityOf(acc.buyAmount, acc.sellAmount));
         result.setBuyRatio(TradeIntensity.buyRatioOf(acc.buyAmount, acc.sellAmount));
         result.setLastTradeTimestamp(acc.lastTradeTimestamp);
+        result.setWhaleBuyAmount(acc.whaleBuy);
+        result.setWhaleSellAmount(acc.whaleSell);
+        result.setMidBuyAmount(acc.midBuy);
+        result.setMidSellAmount(acc.midSell);
+        result.setRetailBuyAmount(acc.retailBuy);
+        result.setRetailSellAmount(acc.retailSell);
         out.collect(result);
     }
 }

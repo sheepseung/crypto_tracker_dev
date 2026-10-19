@@ -103,6 +103,11 @@
   .badge.VOLUME_SURGE { color: #6d4fd0; background: #efeafc; }
   .badge.KIMCHI_PREMIUM { color: #0f8a5f; background: #e3f7ee; }
   .badge.ORDERBOOK_IMBALANCE { color: #c25a10; background: #fdebdd; }
+  .badge.TIER_DIVERGENCE { color: #0f6e8a; background: #e2f3f8; }
+  .evic.TIER_DIVERGENCE { background: #e2f3f8; color: #0f6e8a; }
+  .pctl { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--line-2); color: var(--sub); }
+  .pctl.hot { background: var(--red-soft); color: var(--red); }
+  .pctl.cold { background: var(--blue-soft); color: var(--blue); }
   .badge.top { color: var(--orange); background: #fff4e5; margin-left: 6px; font-weight: 600; }
   .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
   .filters button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: var(--card); color: var(--sub); border-radius: 999px; padding: 4px 11px; cursor: pointer; }
@@ -164,6 +169,11 @@
       <div class="chart"><canvas id="cumChart"></canvas></div>
       <p class="foot">매수 체결 금액 − 매도 체결 금액을 하루 동안 더한 값. 위로 가면 돈이 들어오고, 아래로 가면 빠져나간다.</p>
     </div>
+    <div class="panel">
+      <h2><svg class="ic"><use href="#i-layers"/></svg>주체별 누적 순매수 <span class="seg" id="tierCoin"></span><span class="hint">체결 한 건 금액으로 나눔 · 오늘</span><span class="right legend" id="tierLegend"></span></h2>
+      <div class="chart"><canvas id="tierChart"></canvas></div>
+      <p class="foot">고래와 개미의 선이 반대로 갈리면 주체 엇갈림이다. 15분 동안 서로 30% 넘게 반대로 쏠리면 이벤트로 남는다. 업비트는 합계만 보여 준다.</p>
+    </div>
     <div class="row-2">
       <div class="panel">
         <h2><svg class="ic"><use href="#i-activity"/></svg>매수 비율 추이 <span class="seg" id="flowCoin"></span> <span class="seg" id="flowHours"></span><span class="right">점은 감지 이벤트</span></h2>
@@ -221,7 +231,14 @@
 <script>
   const ORDER = ['KRW-BTC', 'KRW-ETH', 'KRW-DOGE'];
   const COLORS = { 'KRW-BTC': '#f7931a', 'KRW-ETH': '#5b6ee1', 'KRW-DOGE': '#a6892a' };
-  const TYPES = { LARGE_TRADE: ['대량 체결', '#b95f00', 'coins'], LARGE_TRADE_BURST: ['집중 체결', '#b95f00', 'zap'], PRICE_SURGE: ['급등', '#f04452', 'up'], PRICE_DROP: ['급락', '#3182f6', 'down'], VOLUME_SURGE: ['거래량 급증', '#6d4fd0', 'activity'], KIMCHI_PREMIUM: ['김프', '#0f8a5f', 'globe'], ORDERBOOK_IMBALANCE: ['호가 쏠림', '#c25a10', 'scale'] };
+  const TYPES = { LARGE_TRADE: ['대량 체결', '#b95f00', 'coins'], LARGE_TRADE_BURST: ['집중 체결', '#b95f00', 'zap'], PRICE_SURGE: ['급등', '#f04452', 'up'], PRICE_DROP: ['급락', '#3182f6', 'down'], VOLUME_SURGE: ['거래량 급증', '#6d4fd0', 'activity'], KIMCHI_PREMIUM: ['김프', '#0f8a5f', 'globe'], ORDERBOOK_IMBALANCE: ['호가 쏠림', '#c25a10', 'scale'], TIER_DIVERGENCE: ['주체 엇갈림', '#0f6e8a', 'layers'] };
+  const TIERS = [['cumulativeWhaleNet', '고래 (1천만+)', '#ff8a00'], ['cumulativeMidNet', '중형', '#8b95a1'], ['cumulativeRetailNet', '개미 (10만 미만)', '#3182f6']];
+  const contexts = new Map();   // code → 평소 대비 백분위
+  // 백분위 → "상위 n%" 칩. 50 근처는 보통, 90 이상·10 이하는 색을 입힌다
+  const pctlChip = p => p == null ? '' : `<span class="pctl ${p >= 90 ? 'hot' : p <= 10 ? 'cold' : ''}">${p >= 50 ? '상위 ' + Math.max(1, Math.round(100 - p)) : '하위 ' + Math.max(1, Math.round(p))}%</span>`;
+  async function loadContext() {
+    try { const list = await (await fetch('/api/context')).json(); contexts.clear(); list.forEach(c => contexts.set(c.code, c)); renderCards(); } catch (e) { /* 다음 주기에 */ }
+  }
   const LOGO = { 'KRW-BTC': 'btc', 'KRW-ETH': 'eth', 'KRW-DOGE': 'doge' };
   const icon = name => `<svg class="ic"><use href="#i-${name}"/></svg>`;
   const logo = code => { const id = LOGO[code]; const fb = sym(code).slice(0, 1); return `<span class="logo">${id ? `<img src="https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/${id}.svg" alt="${sym(code)}" onerror="this.replaceWith('${fb}')">` : fb}</span>`; };
@@ -259,7 +276,7 @@
     const list = codes();
     if (!list.length) { el.innerHTML = '<div class="card empty">지표를 기다리는 중</div>'.repeat(3); return; }
     el.innerHTML = list.map(code => {
-      const m = metrics.get(code + '|' + CARD_WINDOW), p = premiums.get(code), o = orderbooks.get(code);
+      const m = metrics.get(code + '|' + CARD_WINDOW), p = premiums.get(code), o = orderbooks.get(code), ctx = contexts.get(code);
       const price = p ? p.upbitPrice : (o ? o.bestBid : null);
       return `
       <article class="card" data-coin="${sym(code)}">
@@ -276,8 +293,11 @@
         </div>
         <div class="stats num">
           <div><div class="label">순매수 · 5분</div><div class="v ${m ? cls(m.netAmount) : ''}">${m ? signed(m.netAmount) : '—'}</div></div>
-          <div><div class="label">거래대금 · 5분</div><div class="v">${m ? fmtKrw(m.totalAmount) : '—'}</div></div>
+          <div><div class="label">거래대금 · 5분</div><div class="v">${m ? fmtKrw(m.totalAmount) : '—'} ${pctlChip(ctx && ctx.totalAmountPercentile)}</div></div>
           <div><div class="label">호가 매수÷매도</div><div class="v ${o ? cls(o.ratio - 1) : ''}">${o ? o.ratio.toFixed(2) : '—'}</div></div>
+          <div><div class="label">고래 순매수 · 5분</div><div class="v ${m ? cls(m.whaleNetAmount) : ''}">${m ? signed(m.whaleNetAmount) : '—'}</div></div>
+          <div><div class="label">개미 순매수 · 5분</div><div class="v ${m ? cls(m.retailNetAmount) : ''}">${m ? signed(m.retailNetAmount) : '—'}</div></div>
+          <div><div class="label">체결강도 평소 대비</div><div class="v">${pctlChip(ctx && ctx.intensityPercentile) || '<span class="faint">분포 수집 중</span>'}</div></div>
         </div>
       </article>`;
     }).join('');
@@ -317,8 +337,23 @@
         fetch('/api/history?hours=' + flowHours).then(r => r.json()),
         fetch(`/api/events?code=${flowCoin}&since=${Date.now() - flowHours * 3600e3}&limit=200`).then(r => r.json())
       ]);
-      drawCumulative(cum); drawRatio(hist[flowCoin] || [], evs);
+      drawCumulative(cum); drawRatio(hist[flowCoin] || [], evs); drawTiers(cum[flowCoin] || []);
     } catch (e) { /* 다음 주기에 다시 */ }
+  }
+  let tierChart;
+  function drawTiers(points) {
+    // 주체별 컬럼은 2026-10-19 에 추가돼 그 전 버킷은 0 이다. 0 만 있으면 선 대신 안내를 보여 준다
+    const live = points.filter(p => p.cumulativeWhaleNet || p.cumulativeMidNet || p.cumulativeRetailNet);
+    const note = document.querySelector('#tierChart').parentElement.nextElementSibling;
+    if (!live.length) { note.textContent = '주체별 5분 버킷이 아직 없어요. 5분마다 한 점씩 쌓여요.'; if (tierChart) { tierChart.data = { datasets: [] }; tierChart.update('none'); } return; }
+    note.textContent = '고래와 개미의 선이 반대로 갈리면 주체 엇갈림이다. 15분 동안 서로 30% 넘게 반대로 쏠리면 이벤트로 남는다. 업비트는 합계만 보여 준다.';
+    const datasets = TIERS.map(([key, label, color]) => ({ label, data: live.map(p => ({ x: p.t, y: p[key] })), borderColor: color, borderWidth: 2, pointRadius: 0, tension: 0.25 }));
+    document.getElementById('tierLegend').innerHTML = TIERS.map(([, label, color]) => `<span><i style="background:${color}"></i>${label}</span>`).join('');
+    const opts = baseOptions(v => fmtKrw(v));
+    opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => ` ${i.dataset.label} ${signed(i.parsed.y)}` };
+    const data = { datasets };
+    if (!tierChart) tierChart = new Chart(document.getElementById('tierChart'), { type: 'line', data, options: opts, plugins: [zeroLinePlugin] });
+    else { tierChart.data = data; tierChart.update('none'); }
   }
   function drawCumulative(byCode) {
     const codesSorted = Object.keys(byCode).sort(byOrder);
@@ -346,6 +381,7 @@
   }
   function renderFlowControls() {
     seg('flowCoin', ORDER.map(c => [c, sym(c)]), flowCoin, v => { flowCoin = v; renderFlowControls(); loadCharts(); });
+    seg('tierCoin', ORDER.map(c => [c, sym(c)]), flowCoin, v => { flowCoin = v; renderFlowControls(); loadCharts(); });
     seg('flowHours', [[3, '3시간'], [6, '6시간'], [24, '24시간']], flowHours, v => { flowHours = +v; renderFlowControls(); loadCharts(); });
   }
 
@@ -447,6 +483,7 @@
   renderCards(); renderRows(); renderQuotes(); renderEvents();
   showView(['flow', 'events', 'metrics', 'summary'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'flow');
   loadSummary(); setInterval(loadSummary, 5 * 60 * 1000); setInterval(loadCharts, 60 * 1000);
+  loadContext(); setInterval(loadContext, 30 * 1000);
   connect();
 </script>
 </body>

@@ -43,6 +43,7 @@
 | `premium` | 김치 프리미엄 (Flink 밖, Spring 스케줄) | `BinancePriceFeed`, `ExchangeRateFeed`, `UpbitLastPriceStore`, `KimchiPremiumService` |
 | `orderbook` | 호가 쏠림 (Flink 밖, 호가 토픽 소비) | `Orderbook`, `OrderbookImbalance`, `ImbalanceDetector`, `OrderbookService` |
 | `summary` | 일별 요약 (5분 버킷·이벤트 이력 집계, 00:05 스케줄) | `DailySummary`, `DailySummaryService` |
+| `context` | 평소 대비 백분위 (7일 5분 버킷 분포) | `ContextService` |
 | `controller` | REST·SSE 엔드포인트 | `IntensityController`, `EventsController`, `RulesController`, `StreamController` |
 | `util` | 한국 시간 포맷 | `KstTime` |
 
@@ -102,6 +103,8 @@
 
 체결강도 = 매수 ÷ 매도 × 100. 매도가 0이면 9999.99로 막는다(`TradeIntensity.MAX_INTENSITY`). 항상 0~100인 `buyRatio`도 같이 낸다.
 
+누적기는 체결 한 건의 금액으로 고래·중형·개미를 나눠 구간별 매수·매도도 쌓는다(`tiers.whale-min-amount`, `tiers.retail-max-amount`). 이 값이 모든 윈도우와 5분 버킷(`intensity_bucket` 의 `whale_*`·`mid_*`·`retail_*`)에 실려 주체별 누적 그래프와 엇갈림 감지의 재료가 된다.
+
 ### 4.4 감지 파이프라인
 
 `DetectionService`는 `attach` 시점에 `RulesProvider.current()`로 규칙 스냅샷을 받아 감지기 생성자에 싣는다. 감지기는 체결마다 `rules.resolve(code)`로 종목 규칙을 찾는다. 세 감지기 모두 `KeyedProcessFunction`(키 = 종목)이고 상태는 다음과 같다.
@@ -110,6 +113,7 @@
 | --- | --- | --- | --- |
 | `LargeTradeDetector` | 체결 | 방향별 최근 10초 체결 목록, 조건·방향별 마지막 발생 시각 | 단일 ≥ `largeSingleAmount` → `LARGE_TRADE`. 단일에 안 걸린 체결의 10초 같은 방향 합 ≥ `largeBurstAmount` → `LARGE_TRADE_BURST`. 쿨다운 `largeCooldownSeconds` |
 | `PriceMoveDetector` | 체결 | 최근 5분 체결가 목록, 방향별 마지막 발생 시각·가격 | 구간 안 가장 오래된 가격 대비 ±`priceThresholdPercent` → `PRICE_SURGE`/`PRICE_DROP`. 쿨다운 중이라도 직전 이벤트 가격에서 임계치만큼 더 가면 낸다 |
+| `TierDivergenceDetector` | 15분 슬라이딩 `TradeIntensity` | 방향별 마지막 발생 시각 | 고래 순매수÷고래 거래대금과 개미의 같은 비율이 부호가 반대이고 둘 다 ≥ 0.3 → `TIER_DIVERGENCE`. 표본 최소 금액 미만이면 판정 안 함 |
 | `VolumeSurgeDetector` | 5분 슬라이딩 `TradeIntensity` | 정렬 버킷(5분 경계) 거래대금 최근 288개, 마지막 버킷 끝, 선채움 여부, 마지막 발생 시각 | 현재 5분 거래대금 ≥ 버킷 평균 × `volumeMultiplier` → `VOLUME_SURGE`. 버킷 12개 미만이면 판정 안 함 |
 
 거래량 감지는 체결강도와 같은 5분 윈도우를 **다시** 집계한다. 파이프라인끼리 스트림을 넘기지 않아야 한쪽만 끄거나 바꿔도 다른 쪽이 영향을 받지 않는다. 기준선은 종목의 첫 윈도우에서 `UpbitCandleBaselineSource`가 업비트 5분봉 200개를 REST로 가져와 채운다. 실패하면 경고만 남기고 스트림으로 쌓는다.

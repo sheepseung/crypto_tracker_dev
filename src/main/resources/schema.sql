@@ -40,5 +40,12 @@ CREATE TABLE IF NOT EXISTS intensity_bucket (
     CONSTRAINT pk_intensity_bucket PRIMARY KEY (code, window_end)
 );
 
+ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS whale_buy DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS whale_sell DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS mid_buy DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS mid_sell DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS retail_buy DOUBLE PRECISION NOT NULL DEFAULT 0;
+ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS retail_sell DOUBLE PRECISION NOT NULL DEFAULT 0;
+
 CREATE INDEX IF NOT EXISTS idx_detection_event_code_time ON detection_event (code, event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_detection_event_type_time ON detection_event (type, event_time DESC);

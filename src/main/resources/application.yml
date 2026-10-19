@@ -46,6 +46,11 @@ flink:
     max-concurrent: 1 # 동시 체크포인트 수
   parallelism: 1 # 병렬 처리 수
 
+# 체결 주체 구간 (체결 한 건 금액, 원화). 고래 ≥ whale-min, 개미 < retail-max, 그 사이는 중형
+tiers:
+  whale-min-amount: 10000000 # 1천만 원
+  retail-max-amount: 100000 # 10만 원
+
 # 감지 설정 (금액은 원화, 시간은 체결 시각 기준)
 # 임계치·배수·쿨다운은 DB(detection_rule)에 기본 규칙이 없을 때 한 번 심는 초깃값이고, 이후는 /api/rules 로 바꾼다.
 # 구간 길이(window·slide·baseline)는 파이프라인 구조라 여기서만 바꾼다.
@@ -67,6 +72,17 @@ detection:
     multiplier: 5.0 # 기준선 평균의 몇 배부터 급증으로 볼지
     cooldown-seconds: 300 # 같은 종목 재감지 간격
     seed-from-upbit: true # 기동 직후 업비트 5분봉으로 기준선을 채울지
+  divergence:
+    window-seconds: 900 # 고래·개미 순매수를 비교하는 구간 (15분)
+    min-tier-ratio: 0.3 # 각 주체가 자기 거래대금의 이 비율 이상 한쪽으로 쏠려야 함
+    min-whale-amount: 100000000 # 고래 거래대금이 이보다 작으면 판정 안 함 (1억 원)
+    min-retail-amount: 10000000 # 개미 거래대금이 이보다 작으면 판정 안 함 (1천만 원)
+    cooldown-seconds: 1800 # 같은 종목·방향 재감지 간격
+
+# 평소 대비 백분위 (최근 N일 5분 버킷 분포에서 지금 값의 위치)
+context:
+  days: 7
+  refresh-seconds: 300
 
 # 체결강도 설정
 trade:

@@ -17,6 +17,7 @@ public class DetectionEvent {
     public static final String VOLUME_SURGE = "VOLUME_SURGE";
     public static final String KIMCHI_PREMIUM = "KIMCHI_PREMIUM";
     public static final String ORDERBOOK_IMBALANCE = "ORDERBOOK_IMBALANCE";
+    public static final String TIER_DIVERGENCE = "TIER_DIVERGENCE";
 
     private String type;
     private String code;
@@ -116,6 +117,23 @@ public class DetectionEvent {
         event.message = String.format("%s %s벽 %d초 지속: 매수÷매도 잔량 %.2f, 상위 %d호가 %s",
                 snapshot.code(), bidWall ? "매수" : "매도", heldSeconds, snapshot.ratio(), snapshot.topLevels(),
                 Krw.format(event.amount));
+        return event;
+    }
+
+    /** 주체 엇갈림: side 는 고래 방향, amount 는 고래 순매수, baselineAmount 는 개미 순매수, ratio 는 고래 쏠림 비율. */
+    public static DetectionEvent tierDivergence(TradeIntensity w, double whaleLean, double retailLean) {
+        boolean whaleBuys = whaleLean > 0;
+        DetectionEvent event = base(TIER_DIVERGENCE, w.getCode(), w.getLastTradeTimestamp());
+        event.side = whaleBuys ? CryptoTrade.BID : CryptoTrade.ASK;
+        event.amount = w.getWhaleNetAmount();
+        event.baselineAmount = w.getRetailNetAmount();
+        event.ratio = whaleLean;
+        event.changePercent = retailLean * 100.0;
+        event.windowSeconds = w.getWindowSeconds();
+        event.message = String.format("%s %d분 고래는 %s(%s, %.0f%%) 개미는 %s(%s, %.0f%%)",
+                w.getCode(), w.getWindowSeconds() / 60,
+                whaleBuys ? "매수" : "매도", Krw.format(Math.abs(w.getWhaleNetAmount())), Math.abs(whaleLean) * 100,
+                whaleBuys ? "매도" : "매수", Krw.format(Math.abs(w.getRetailNetAmount())), Math.abs(retailLean) * 100);
         return event;
     }
 

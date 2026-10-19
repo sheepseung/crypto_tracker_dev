@@ -29,7 +29,7 @@ class TradeIntensityServiceTest {
                 trade("KRW-BTC", CryptoTrade.BID, 100_000_000, 0.25, BASE + 20_000),
                 trade("KRW-ETH", CryptoTrade.ASK, 4_000_000, 2.0, BASE + 20_000)));
 
-        TradeIntensityService service = new TradeIntensityService(List.of(60), 5, true, null);
+        TradeIntensityService service = new TradeIntensityService(List.of(60), 5, true, 10_000_000, 100_000, null);
 
         List<TradeIntensity> results = new ArrayList<>();
         service.intensityStream(trades).executeAndCollect().forEachRemaining(results::add);
