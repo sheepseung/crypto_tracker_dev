@@ -25,6 +25,10 @@ public class TradeAmountAggregator
         public double midSell;
         public double retailBuy;
         public double retailSell;
+        // 윈도우 안 첫·마지막 체결가. 체결 시각으로 고르므로 순서가 어긋나도 맞다
+        public double openPrice;
+        public long openTimestamp = Long.MAX_VALUE;
+        public double closePrice;
 
         public Accumulator() {
         }
@@ -62,7 +66,15 @@ public class TradeAmountAggregator
             if (bid) acc.midBuy += amount; else acc.midSell += amount;
         }
         acc.tradeCount++;
-        acc.lastTradeTimestamp = Math.max(acc.lastTradeTimestamp, trade.getTradeTimestamp());
+        long ts = trade.getTradeTimestamp();
+        if (ts < acc.openTimestamp) {
+            acc.openTimestamp = ts;
+            acc.openPrice = trade.getTradePrice();
+        }
+        if (ts >= acc.lastTradeTimestamp) {
+            acc.lastTradeTimestamp = ts;
+            acc.closePrice = trade.getTradePrice();
+        }
         return acc;
     }
 
@@ -86,6 +98,10 @@ public class TradeAmountAggregator
         m.midSell = a.midSell + b.midSell;
         m.retailBuy = a.retailBuy + b.retailBuy;
         m.retailSell = a.retailSell + b.retailSell;
+        Accumulator earlier = a.openTimestamp <= b.openTimestamp ? a : b;
+        m.openTimestamp = earlier.openTimestamp;
+        m.openPrice = earlier.openPrice;
+        m.closePrice = a.lastTradeTimestamp >= b.lastTradeTimestamp ? a.closePrice : b.closePrice;
         return m;
     }
 }

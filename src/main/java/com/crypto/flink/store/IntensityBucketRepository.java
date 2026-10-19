@@ -31,7 +31,18 @@ public class IntensityBucketRepository {
     }
 
     public record Bucket(String code, long windowEnd, double buyAmount, double sellAmount, int tradeCount,
-            double whaleBuy, double whaleSell, double midBuy, double midSell, double retailBuy, double retailSell) {
+            double whaleBuy, double whaleSell, double midBuy, double midSell, double retailBuy, double retailSell,
+            double openPrice, double closePrice) {
+        public static Bucket of(TradeIntensity w) {
+            return new Bucket(w.getCode(), w.getWindowEnd(), w.getBuyAmount(), w.getSellAmount(), w.getTradeCount(),
+                    w.getWhaleBuyAmount(), w.getWhaleSellAmount(), w.getMidBuyAmount(), w.getMidSellAmount(),
+                    w.getRetailBuyAmount(), w.getRetailSellAmount(), w.getOpenPrice(), w.getClosePrice());
+        }
+
+        public double priceChangePercent() {
+            return openPrice > 0 ? (closePrice / openPrice - 1.0) * 100.0 : 0.0;
+        }
+
         public double netAmount() {
             return buyAmount - sellAmount;
         }
@@ -76,12 +87,12 @@ public class IntensityBucketRepository {
             jdbc.update("""
                     INSERT INTO intensity_bucket
                       (code, window_end, buy_amount, sell_amount, trade_count,
-                       whale_buy, whale_sell, mid_buy, mid_sell, retail_buy, retail_sell)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       whale_buy, whale_sell, mid_buy, mid_sell, retail_buy, retail_sell, open_price, close_price)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     w.getCode(), w.getWindowEnd(), w.getBuyAmount(), w.getSellAmount(), w.getTradeCount(),
                     w.getWhaleBuyAmount(), w.getWhaleSellAmount(), w.getMidBuyAmount(), w.getMidSellAmount(),
-                    w.getRetailBuyAmount(), w.getRetailSellAmount());
+                    w.getRetailBuyAmount(), w.getRetailSellAmount(), w.getOpenPrice(), w.getClosePrice());
             return true;
         } catch (DuplicateKeyException e) {
             return false;
@@ -92,7 +103,7 @@ public class IntensityBucketRepository {
     public List<Bucket> bucketsBetween(long fromExclusive, long toInclusive) {
         return jdbc.query("""
                 SELECT code, window_end, buy_amount, sell_amount, trade_count,
-                       whale_buy, whale_sell, mid_buy, mid_sell, retail_buy, retail_sell
+                       whale_buy, whale_sell, mid_buy, mid_sell, retail_buy, retail_sell, open_price, close_price
                 FROM intensity_bucket
                 WHERE window_end > ? AND window_end <= ?
                 ORDER BY code, window_end
@@ -100,7 +111,8 @@ public class IntensityBucketRepository {
                 (rs, i) -> new Bucket(rs.getString("code"), rs.getLong("window_end"), rs.getDouble("buy_amount"),
                         rs.getDouble("sell_amount"), rs.getInt("trade_count"),
                         rs.getDouble("whale_buy"), rs.getDouble("whale_sell"), rs.getDouble("mid_buy"),
-                        rs.getDouble("mid_sell"), rs.getDouble("retail_buy"), rs.getDouble("retail_sell")),
+                        rs.getDouble("mid_sell"), rs.getDouble("retail_buy"), rs.getDouble("retail_sell"),
+                        rs.getDouble("open_price"), rs.getDouble("close_price")),
                 fromExclusive, toInclusive);
     }
 

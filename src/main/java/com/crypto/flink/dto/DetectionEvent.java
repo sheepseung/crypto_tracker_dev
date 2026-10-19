@@ -20,6 +20,9 @@ public class DetectionEvent {
     public static final String TIER_DIVERGENCE = "TIER_DIVERGENCE";
     public static final String WALL_PULLED = "WALL_PULLED";
     public static final String WALL_EATEN = "WALL_EATEN";
+    public static final String ABSORPTION = "ABSORPTION";
+    public static final String LIQUIDITY_GAP = "LIQUIDITY_GAP";
+    public static final String PREMIUM_JUMP = "PREMIUM_JUMP";
 
     private String type;
     private String code;
@@ -161,6 +164,59 @@ public class DetectionEvent {
                         Krw.format(wall.price()), event.windowSeconds)
                 : String.format("%s 허수 %s %s: %s 에 %d초 있다가 가격이 닿기 전 사라짐", code, what, Krw.format(wall.maxAmount()),
                         Krw.format(wall.price()), event.windowSeconds);
+        return event;
+    }
+
+    /** 흡수: side 는 쏠린 쪽, amount 는 순매수, ratio 는 순매수 백분위, changePercent 는 가격 변화. */
+    public static DetectionEvent absorption(com.crypto.flink.store.IntensityBucketRepository.Bucket b,
+            boolean buySide, double netPercentile, double movePercent) {
+        DetectionEvent event = base(ABSORPTION, b.code(), b.windowEnd());
+        event.side = buySide ? CryptoTrade.BID : CryptoTrade.ASK;
+        event.amount = b.netAmount();
+        event.ratio = netPercentile;
+        event.price = b.closePrice();
+        event.priceFrom = b.openPrice();
+        event.priceTo = b.closePrice();
+        event.changePercent = movePercent;
+        event.windowSeconds = 300;
+        event.message = String.format("%s 5분 %s %s(평소 %s %.0f%%)인데 가격은 %+.2f%% — %s이 받아 주는 중",
+                b.code(), buySide ? "순매수" : "순매도", Krw.format(Math.abs(b.netAmount())),
+                buySide ? "상위" : "하위", buySide ? 100 - netPercentile : netPercentile, movePercent,
+                buySide ? "매도" : "매수");
+        return event;
+    }
+
+    /** 유동성 공백: ratio 는 거래대금 백분위, changePercent 는 가격 변화, side 는 움직인 방향. */
+    public static DetectionEvent liquidityGap(com.crypto.flink.store.IntensityBucketRepository.Bucket b,
+            double amountPercentile, double movePercent) {
+        DetectionEvent event = base(LIQUIDITY_GAP, b.code(), b.windowEnd());
+        event.side = movePercent > 0 ? CryptoTrade.BID : CryptoTrade.ASK;
+        event.amount = b.totalAmount();
+        event.ratio = amountPercentile;
+        event.price = b.closePrice();
+        event.priceFrom = b.openPrice();
+        event.priceTo = b.closePrice();
+        event.changePercent = movePercent;
+        event.windowSeconds = 300;
+        event.message = String.format("%s 5분 %+.2f%% 움직였는데 거래대금 %s(평소 하위 %.0f%%) — 얇은 호가를 뚫은 움직임",
+                b.code(), movePercent, Krw.format(b.totalAmount()), amountPercentile);
+        return event;
+    }
+
+    /** 김프 급변: changePercent 는 김프 변화(%p), priceFrom·priceTo 는 5분 전·지금 김프, ratio 는 바이낸스 변화율. */
+    public static DetectionEvent premiumJump(String code, double premiumBefore, double premiumNow,
+            double upbitMovePercent, double globalMovePercent, long now) {
+        double delta = premiumNow - premiumBefore;
+        DetectionEvent event = base(PREMIUM_JUMP, code, now);
+        event.priceFrom = premiumBefore;
+        event.priceTo = premiumNow;
+        event.changePercent = delta;
+        event.ratio = globalMovePercent;
+        event.amount = upbitMovePercent;
+        event.windowSeconds = 300;
+        event.message = String.format("%s 김프 5분 새 %+.2f%%p (%+.2f%% → %+.2f%%): 바이낸스 %+.2f%%, 업비트 %+.2f%% — %s",
+                code, delta, premiumBefore, premiumNow, globalMovePercent, upbitMovePercent,
+                delta < 0 ? "바이낸스가 앞서 올라 업비트가 따라갈 여지" : "업비트가 앞서 올라 되돌림 여지");
         return event;
     }
 

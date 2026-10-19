@@ -43,7 +43,7 @@
 | `premium` | 김치 프리미엄 (Flink 밖, Spring 스케줄) | `BinancePriceFeed`, `ExchangeRateFeed`, `UpbitLastPriceStore`, `KimchiPremiumService` |
 | `orderbook` | 호가 쏠림·벽 추적 (Flink 밖, 호가 토픽 소비) | `Orderbook`, `OrderbookImbalance`, `ImbalanceDetector`, `WallTracker`, `OrderbookService` |
 | `summary` | 일별 요약 (5분 버킷·이벤트 이력 집계, 00:05 스케줄) | `DailySummary`, `DailySummaryService` |
-| `context` | 평소 대비 백분위 (7일 5분 버킷 분포) | `ContextService` |
+| `context` | 평소 대비 백분위 (7일 5분 버킷 분포), 흡수·공백 감지 | `ContextService`, `AbsorptionDetector` |
 | `scorecard` | 신호 성적표 (가격 틱 기록, 이벤트 뒤 수익률 채움, 집계) | `OutcomeFiller`, `ScorecardService` |
 | `controller` | REST·SSE 엔드포인트 | `IntensityController`, `EventsController`, `RulesController`, `StreamController` |
 | `util` | 한국 시간 포맷 | `KstTime` |
@@ -138,6 +138,10 @@
 `OrderbookService`가 `crypto-orderbook`을 latest 부터 읽어 종목별 `OrderbookImbalance`(총 매수÷매도 잔량, 상위 N호가 금액, 스프레드)를 유지한다. 호가는 상태 스냅샷이라 윈도우 집계가 필요 없다. 대시보드에는 종목당 1초에 한 번만 보낸다. `ImbalanceDetector`는 쏠림이 `hold-seconds` 동안 끊기지 않고 이어졌을 때 한 번 `ORDERBOOK_IMBALANCE`를 내고 종목·방향별 쿨다운을 둔다. 순간값은 노이즈라서다. 상태는 메모리뿐이고 Kafka 리스너 스레드 하나에서만 쓰므로 동기화하지 않는다.
 
 `WallTracker`는 같은 스냅샷 흐름에서 `(종목, 방향, 가격)`별 벽의 첫 등장·최대 잔량·마지막 관측을 들고 있다. 벽 기준은 절대 금액과 "같은 쪽 다른 호가 평균 대비 배수"를 함께 써 종목 규모와 무관하게 동작한다. 사라짐 판정은 잔량이 최대치의 `gone-ratio` 아래로 떨어질 때이고, 그 순간 최우선 호가였는지로 뚫김과 허수를 가른다. 성적표의 기대 방향은 매도벽 소멸=상승, 매수벽 소멸=하락이다.
+
+### 5.4 흡수·공백과 김프 급변 (Flink 밖)
+
+`ResultConsumer`가 새 5분 버킷을 저장할 때만 `AbsorptionDetector.onBucket`을 부른다. 같은 버킷이 다시 와도 저장이 거부되므로 판정도 한 번이다. 판정은 `ContextService.contextFor`의 백분위와 버킷의 시가·종가 변화로 한다(누적기가 체결 시각으로 첫·마지막 체결가를 고른다). `KimchiPremiumService`는 종목별 최근 김프 스냅샷을 5분 남짓 들고 있다가 창 절반 이상 지난 과거와 비교해 `PREMIUM_JUMP`를 낸다. 둘 다 저장소에 직접 넣고 SSE 로 전파한다.
 
 ### 5.3 신호 성적표 (Flink 밖)
 

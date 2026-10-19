@@ -63,6 +63,11 @@ public class ScorecardService {
             // 매도벽이 뚫리거나 거짓으로 드러나면 위로, 매수벽이면 아래로 기대한다
             case DetectionEvent.WALL_EATEN, DetectionEvent.WALL_PULLED ->
                     CryptoTrade.ASK.equals(e.getSide()) ? 1 : CryptoTrade.BID.equals(e.getSide()) ? -1 : 0;
+            // 흡수는 쏠린 쪽이 막히는 것이고, 공백은 되돌림, 김프 급변은 벌어진 쪽이 좁혀지는 것을 기대한다
+            case DetectionEvent.ABSORPTION ->
+                    CryptoTrade.BID.equals(e.getSide()) ? -1 : CryptoTrade.ASK.equals(e.getSide()) ? 1 : 0;
+            case DetectionEvent.LIQUIDITY_GAP, DetectionEvent.PREMIUM_JUMP ->
+                    e.getChangePercent() == null ? 0 : e.getChangePercent() > 0 ? -1 : 1;
             default -> 0;
         };
     }

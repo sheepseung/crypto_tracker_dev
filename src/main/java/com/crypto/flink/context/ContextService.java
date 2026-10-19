@@ -62,6 +62,17 @@ public class ContextService {
                 .toList();
     }
 
+    /** 다른 감지기가 쓰는 백분위. 분포가 없으면 비어 있다. */
+    public Optional<CodeContext> contextFor(String code, double intensity, double totalAmount, double netAmount) {
+        Distribution d = distributions.get(code);
+        if (d == null || d.intensity().length == 0) {
+            return Optional.empty();
+        }
+        return Optional.of(new CodeContext(code, percentile(d.intensity(), intensity),
+                percentile(d.totalAmount(), totalAmount), percentile(d.netAmount(), netAmount),
+                d.intensity().length, days));
+    }
+
     private CodeContext contextOf(TradeIntensity w) {
         Distribution d = distributions.get(w.getCode());
         if (d == null || d.intensity().length == 0) {

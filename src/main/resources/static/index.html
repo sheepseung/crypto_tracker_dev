@@ -107,6 +107,9 @@
   .evic.TIER_DIVERGENCE { background: #e2f3f8; color: #0f6e8a; }
   .badge.WALL_PULLED, .evic.WALL_PULLED { color: #7a5c00; background: #fbf3d6; }
   .badge.WALL_EATEN, .evic.WALL_EATEN { color: #8a1f5c; background: #fae3ef; }
+  .badge.ABSORPTION, .evic.ABSORPTION { color: #3d5a80; background: #e6edf7; }
+  .badge.LIQUIDITY_GAP, .evic.LIQUIDITY_GAP { color: #9a3412; background: #fde8dc; }
+  .badge.PREMIUM_JUMP, .evic.PREMIUM_JUMP { color: #047857; background: #d9f5ea; }
   .pctl { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--line-2); color: var(--sub); }
   .pctl.hot { background: var(--red-soft); color: var(--red); }
   .pctl.cold { background: var(--blue-soft); color: var(--blue); }
@@ -241,7 +244,7 @@
 <script>
   const ORDER = ['KRW-BTC', 'KRW-ETH', 'KRW-DOGE'];
   const COLORS = { 'KRW-BTC': '#f7931a', 'KRW-ETH': '#5b6ee1', 'KRW-DOGE': '#a6892a' };
-  const TYPES = { LARGE_TRADE: ['대량 체결', '#b95f00', 'coins'], LARGE_TRADE_BURST: ['집중 체결', '#b95f00', 'zap'], PRICE_SURGE: ['급등', '#f04452', 'up'], PRICE_DROP: ['급락', '#3182f6', 'down'], VOLUME_SURGE: ['거래량 급증', '#6d4fd0', 'activity'], KIMCHI_PREMIUM: ['김프', '#0f8a5f', 'globe'], ORDERBOOK_IMBALANCE: ['호가 쏠림', '#c25a10', 'scale'], TIER_DIVERGENCE: ['주체 엇갈림', '#0f6e8a', 'layers'], WALL_PULLED: ['허수 벽', '#7a5c00', 'inbox'], WALL_EATEN: ['벽 뚫김', '#8a1f5c', 'zap'] };
+  const TYPES = { LARGE_TRADE: ['대량 체결', '#b95f00', 'coins'], LARGE_TRADE_BURST: ['집중 체결', '#b95f00', 'zap'], PRICE_SURGE: ['급등', '#f04452', 'up'], PRICE_DROP: ['급락', '#3182f6', 'down'], VOLUME_SURGE: ['거래량 급증', '#6d4fd0', 'activity'], KIMCHI_PREMIUM: ['김프', '#0f8a5f', 'globe'], ORDERBOOK_IMBALANCE: ['호가 쏠림', '#c25a10', 'scale'], TIER_DIVERGENCE: ['주체 엇갈림', '#0f6e8a', 'layers'], WALL_PULLED: ['허수 벽', '#7a5c00', 'inbox'], WALL_EATEN: ['벽 뚫김', '#8a1f5c', 'zap'], ABSORPTION: ['흡수', '#3d5a80', 'scale'], LIQUIDITY_GAP: ['유동성 공백', '#9a3412', 'activity'], PREMIUM_JUMP: ['김프 급변', '#047857', 'globe'] };
   const TIERS = [['cumulativeWhaleNet', '고래 (1천만+)', '#ff8a00'], ['cumulativeMidNet', '중형', '#8b95a1'], ['cumulativeRetailNet', '개미 (10만 미만)', '#3182f6']];
   const contexts = new Map();   // code → 평소 대비 백분위
   // 백분위 → "상위 n%" 칩. 50 근처는 보통, 90 이상·10 이하는 색을 입힌다

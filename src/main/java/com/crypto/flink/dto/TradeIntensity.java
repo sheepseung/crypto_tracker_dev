@@ -31,8 +31,15 @@ public class TradeIntensity {
     private double midSellAmount;
     private double retailBuyAmount;
     private double retailSellAmount;
+    private double openPrice;
+    private double closePrice;
 
     public TradeIntensity() {
+    }
+
+    /** 윈도우 안 가격 변화(%). 시가가 없으면 0. */
+    public double getPriceChangePercent() {
+        return openPrice > 0 ? (closePrice / openPrice - 1.0) * 100.0 : 0.0;
     }
 
     public double getWhaleNetAmount() {
@@ -225,6 +232,22 @@ public class TradeIntensity {
 
     public void setRetailSellAmount(double retailSellAmount) {
         this.retailSellAmount = retailSellAmount;
+    }
+
+    public double getOpenPrice() {
+        return openPrice;
+    }
+
+    public void setOpenPrice(double openPrice) {
+        this.openPrice = openPrice;
+    }
+
+    public double getClosePrice() {
+        return closePrice;
+    }
+
+    public void setClosePrice(double closePrice) {
+        this.closePrice = closePrice;
     }
 
     @Override

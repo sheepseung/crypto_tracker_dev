@@ -41,6 +41,8 @@ public class IntensityWindowFunction
         result.setMidSellAmount(acc.midSell);
         result.setRetailBuyAmount(acc.retailBuy);
         result.setRetailSellAmount(acc.retailSell);
+        result.setOpenPrice(acc.openPrice);
+        result.setClosePrice(acc.closePrice);
         out.collect(result);
     }
 }

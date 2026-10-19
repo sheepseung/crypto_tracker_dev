@@ -23,6 +23,22 @@ class TradeAmountAggregatorTest {
         assertEquals(0.2, acc.sellVolume, 1e-9);
         assertEquals(3, acc.tradeCount);
         assertEquals(2_000, acc.lastTradeTimestamp);
+        // 시가는 체결 시각이 가장 이른 것(1_000), 종가는 가장 늦은 것(2_000)
+        assertEquals(100_000_000, acc.openPrice, 1e-6);
+        assertEquals(100_000_000, acc.closePrice, 1e-6);
+    }
+
+    @Test
+    void 시가와_종가는_체결_시각_순서로_고르고_병합도_같다() {
+        TradeAmountAggregator.Accumulator a = aggregator.add(trade("BID", 110, 1, 50), aggregator.createAccumulator());
+        TradeAmountAggregator.Accumulator b = aggregator.add(trade("BID", 90, 1, 10), aggregator.createAccumulator());
+        b = aggregator.add(trade("ASK", 95, 1, 70), b);
+
+        TradeAmountAggregator.Accumulator merged = aggregator.merge(a, b);
+        assertEquals(90, merged.openPrice, 1e-9);
+        assertEquals(95, merged.closePrice, 1e-9);
+        assertEquals(10, merged.openTimestamp);
+        assertEquals(70, merged.lastTradeTimestamp);
     }
 
     @Test

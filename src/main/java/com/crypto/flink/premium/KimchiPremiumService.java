@@ -39,18 +39,30 @@ public class KimchiPremiumService {
 
     private final Map<String, KimchiPremium> latest = new ConcurrentHashMap<>();
     private final Map<String, Long> lastEmitted = new ConcurrentHashMap<>();
+    // G6 김프 급변용 최근 스냅샷 (종목별, 오래된 순)
+    private final Map<String, java.util.ArrayDeque<KimchiPremium>> recent = new ConcurrentHashMap<>();
+    private final Map<String, Long> lastJumpEmitted = new ConcurrentHashMap<>();
+    private final double jumpThresholdPoints;
+    private final long jumpWindowMillis;
+    private final long jumpCooldownMillis;
 
     public KimchiPremiumService(
             @Value("${premium.enabled:true}") boolean enabled,
             @Value("${premium.codes:KRW-BTC,KRW-ETH,KRW-DOGE}") List<String> codes,
             @Value("${premium.threshold-percent:5.0}") double thresholdPercent,
             @Value("${premium.cooldown-seconds:1800}") int cooldownSeconds,
+            @Value("${premium.jump.threshold-points:0.5}") double jumpThresholdPoints,
+            @Value("${premium.jump.window-seconds:300}") int jumpWindowSeconds,
+            @Value("${premium.jump.cooldown-seconds:900}") int jumpCooldownSeconds,
             UpbitLastPriceStore upbitPrices, BinancePriceFeed binancePrices, ExchangeRateFeed exchangeRate,
             DetectionEventRepository eventRepository, StreamBroadcaster broadcaster) {
         this.enabled = enabled;
         this.codes = codes;
         this.thresholdPercent = thresholdPercent;
         this.cooldownMillis = cooldownSeconds * 1000L;
+        this.jumpThresholdPoints = jumpThresholdPoints;
+        this.jumpWindowMillis = jumpWindowSeconds * 1000L;
+        this.jumpCooldownMillis = jumpCooldownSeconds * 1000L;
         this.upbitPrices = upbitPrices;
         this.binancePrices = binancePrices;
         this.exchangeRate = exchangeRate;
@@ -77,8 +89,52 @@ public class KimchiPremiumService {
                 latest.put(code, premium);
                 broadcaster.publishPremium(premium);
                 detect(premium, now);
+                detectJump(premium, now);
             });
         }
+    }
+
+    /** G6: 5분 전 스냅샷과 비교해 김프가 임계치 이상 변했으면 이벤트. 어느 쪽이 앞서 움직였는지 같이 적는다. */
+    private void detectJump(KimchiPremium now, long nowMillis) {
+        java.util.ArrayDeque<KimchiPremium> history = recent.computeIfAbsent(now.code(), c -> new java.util.ArrayDeque<>());
+        history.addLast(now);
+        while (!history.isEmpty() && nowMillis - history.peekFirst().updatedAt() > jumpWindowMillis + 10_000) {
+            history.pollFirst();
+        }
+        jumpOf(history, now, jumpWindowMillis, jumpThresholdPoints).ifPresent(event -> {
+            Long last = lastJumpEmitted.get(now.code());
+            if (last != null && nowMillis - last < jumpCooldownMillis) {
+                return;
+            }
+            lastJumpEmitted.put(now.code(), nowMillis);
+            if (eventRepository.save(event)) {
+                logger.info("감지 이벤트: {}", event.getMessage());
+                broadcaster.publishEvent(event);
+            }
+        });
+    }
+
+    /** 창 길이에 가장 가까운 과거 스냅샷을 기준으로 변화폭을 본다. 과거가 창의 절반도 안 되면 판정하지 않는다. */
+    static java.util.Optional<DetectionEvent> jumpOf(java.util.Deque<KimchiPremium> history, KimchiPremium now,
+            long windowMillis, double thresholdPoints) {
+        KimchiPremium before = null;
+        for (KimchiPremium p : history) {
+            if (now.updatedAt() - p.updatedAt() >= windowMillis / 2) {
+                before = p;
+                break;
+            }
+        }
+        if (before == null) {
+            return java.util.Optional.empty();
+        }
+        double delta = now.premiumPercent() - before.premiumPercent();
+        if (Math.abs(delta) < thresholdPoints) {
+            return java.util.Optional.empty();
+        }
+        double upbitMove = (now.upbitPrice() / before.upbitPrice() - 1.0) * 100.0;
+        double globalMove = (now.globalPriceKrw() / before.globalPriceKrw() - 1.0) * 100.0;
+        return java.util.Optional.of(DetectionEvent.premiumJump(now.code(), before.premiumPercent(),
+                now.premiumPercent(), upbitMove, globalMove, now.updatedAt()));
     }
 
     private java.util.Optional<KimchiPremium> compute(String code, ExchangeRateFeed.Rate rate, long now) {

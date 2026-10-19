@@ -103,6 +103,19 @@ premium:
   fx-refresh-seconds: 600 # 환율 갱신 주기 (두나무 → 실패 시 open.er-api.com)
   threshold-percent: 5.0 # 괴리율 절댓값이 이 이상이면 KIMCHI_PREMIUM 이벤트
   cooldown-seconds: 1800 # 같은 종목 재감지 간격 (30분)
+  jump: # 김프 급변 (G6)
+    threshold-points: 0.5 # 5분 새 김프가 이만큼(%p) 변하면 PREMIUM_JUMP
+    window-seconds: 300
+    cooldown-seconds: 900
+
+# 흡수·유동성 공백 (G5). 5분 버킷을 평소 분포(context)와 가격 변화로 본다
+absorption:
+  net-percentile: 95 # 순매수가 상위 5%(또는 하위 5%) 안이고
+  max-flat-move-percent: 0.1 # 가격은 ±0.1% 안이면 ABSORPTION
+  gap-min-move-percent: 1.0 # 가격이 ±1% 넘게 움직였는데
+  gap-max-amount-percentile: 30 # 거래대금은 평소 하위 30% 면 LIQUIDITY_GAP
+  min-samples: 100 # 분포 표본이 이보다 적으면 판정 안 함 (약 8시간)
+  cooldown-seconds: 900
 
 # 호가 불균형 (Spring 에서 호가 토픽을 직접 읽어 계산)
 orderbook:
