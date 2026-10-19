@@ -29,22 +29,22 @@ public class TradeIntensityService implements FlinkPipeline {
     private final List<Integer> windowsSeconds;
     private final int slideSeconds;
     private final boolean enabled;
-    private final double whaleMinAmount;
-    private final double retailMaxAmount;
+    private final List<String> tierNames;
+    private final List<Double> tierBounds;
     private final KafkaSink<String> metricsSink;
 
     public TradeIntensityService(
             @Value("${trade.intensity.windows-seconds:60,300,900}") List<Integer> windowsSeconds,
             @Value("${trade.intensity.slide-seconds:5}") int slideSeconds,
             @Value("${jobs.tradeIntensity.enabled:true}") boolean enabled,
-            @Value("${tiers.whale-min-amount:10000000}") double whaleMinAmount,
-            @Value("${tiers.retail-max-amount:100000}") double retailMaxAmount,
+            @Value("${tiers.names:개미,소형,중형,큰손,고래}") List<String> tierNames,
+            @Value("${tiers.bounds:100000,1000000,10000000,100000000}") List<Double> tierBounds,
             @Qualifier("metricsSink") KafkaSink<String> metricsSink) {
         this.windowsSeconds = windowsSeconds;
         this.slideSeconds = slideSeconds;
         this.enabled = enabled;
-        this.whaleMinAmount = whaleMinAmount;
-        this.retailMaxAmount = retailMaxAmount;
+        this.tierNames = tierNames;
+        this.tierBounds = tierBounds;
         this.metricsSink = metricsSink;
     }
 
@@ -60,8 +60,8 @@ public class TradeIntensityService implements FlinkPipeline {
 
     @Override
     public void attach(DataStream<CryptoTrade> trades) {
-        logger.info("체결강도 파이프라인 연결 - 구간 {}초, 갱신 {}초, 고래 {}원 이상, 개미 {}원 미만",
-                windowsSeconds, slideSeconds, (long) whaleMinAmount, (long) retailMaxAmount);
+        logger.info("체결강도 파이프라인 연결 - 구간 {}초, 갱신 {}초, 주체 {} 경계 {}",
+                windowsSeconds, slideSeconds, tierNames, tierBounds);
         intensityStream(trades)
                 .map(new ToJsonMapper<>())
                 .name("TradeIntensity to JSON")
@@ -76,7 +76,7 @@ public class TradeIntensityService implements FlinkPipeline {
             DataStream<TradeIntensity> windowed = trades
                     .keyBy(CryptoTrade::getCode)
                     .window(SlidingEventTimeWindows.of(Time.seconds(windowSeconds), Time.seconds(slideSeconds)))
-                    .aggregate(new TradeAmountAggregator(whaleMinAmount, retailMaxAmount), new IntensityWindowFunction())
+                    .aggregate(new TradeAmountAggregator(tierNames, tierBounds), new IntensityWindowFunction())
                     .name("Trade Intensity " + windowSeconds + "s");
             merged = merged == null ? windowed : merged.union(windowed);
         }

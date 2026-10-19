@@ -46,10 +46,10 @@ flink:
     max-concurrent: 1 # 동시 체크포인트 수
   parallelism: 1 # 병렬 처리 수
 
-# 체결 주체 구간 (체결 한 건 금액, 원화). 고래 ≥ whale-min, 개미 < retail-max, 그 사이는 중형
+# 체결 주체 구간 (체결 한 건 금액, 원화). names 는 오름차순 구간 이름, bounds 는 구간 사이 경계라 names 가 하나 더 많다
 tiers:
-  whale-min-amount: 10000000 # 1천만 원
-  retail-max-amount: 100000 # 10만 원
+  names: 개미,소형,중형,큰손,고래
+  bounds: 100000,1000000,10000000,100000000 # 10만 / 100만 / 1천만 / 1억
 
 # 감지 설정 (금액은 원화, 시간은 체결 시각 기준)
 # 임계치·배수·쿨다운은 DB(detection_rule)에 기본 규칙이 없을 때 한 번 심는 초깃값이고, 이후는 /api/rules 로 바꾼다.

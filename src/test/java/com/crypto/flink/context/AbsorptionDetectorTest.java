@@ -61,6 +61,6 @@ class AbsorptionDetectorTest {
     }
 
     private static Bucket bucket(long end, double open, double close, double buy, double sell) {
-        return new Bucket("KRW-BTC", end, buy, sell, 10, 0, 0, 0, 0, 0, 0, open, close);
+        return new Bucket("KRW-BTC", end, buy, sell, 10, List.of(), open, close);
     }
 }

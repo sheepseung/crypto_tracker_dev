@@ -4,11 +4,14 @@ import com.crypto.flink.dto.CryptoTrade;
 import com.crypto.flink.dto.TradeIntensity;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class TradeAmountAggregatorTest {
 
-    private final TradeAmountAggregator aggregator = new TradeAmountAggregator(10_000_000, 100_000);
+    private final TradeAmountAggregator aggregator = new TradeAmountAggregator(
+            List.of("개미", "소형", "중형", "큰손", "고래"), List.of(100_000.0, 1_000_000.0, 10_000_000.0, 100_000_000.0));
 
     @Test
     void 매수와_매도를_금액으로_나눠_누적한다() {
@@ -42,21 +45,29 @@ class TradeAmountAggregatorTest {
     }
 
     @Test
-    void 체결_금액으로_고래_중형_개미를_나눠_따로_쌓는다() {
+    void 체결_금액으로_다섯_구간을_나눠_매수_매도_건수를_따로_쌓는다() {
         TradeAmountAggregator.Accumulator acc = aggregator.createAccumulator();
-        acc = aggregator.add(trade("BID", 100_000_000, 0.5, 1), acc);   // 5천만 → 고래
-        acc = aggregator.add(trade("ASK", 100_000_000, 0.1, 2), acc);   // 1천만 → 고래 (경계 포함)
-        acc = aggregator.add(trade("BID", 1_000_000, 0.5, 3), acc);     // 50만 → 중형
-        acc = aggregator.add(trade("ASK", 1_000_000, 0.05, 4), acc);    // 5만 → 개미
-        acc = aggregator.add(trade("BID", 100_000, 0.999, 5), acc);     // 99,900 → 개미
+        acc = aggregator.add(trade("BID", 100_000_000, 2.0, 1), acc);    // 2억 → 고래
+        acc = aggregator.add(trade("ASK", 100_000_000, 0.5, 2), acc);    // 5천만 → 큰손
+        acc = aggregator.add(trade("BID", 1_000_000, 5.0, 3), acc);      // 500만 → 중형
+        acc = aggregator.add(trade("ASK", 1_000_000, 0.5, 4), acc);      // 50만 → 소형
+        acc = aggregator.add(trade("BID", 100_000, 0.999, 5), acc);      // 99,900 → 개미
+        acc = aggregator.add(trade("BID", 100_000, 1.0, 6), acc);        // 10만 → 소형 (경계 포함)
 
-        assertEquals(50_000_000, acc.whaleBuy, 1e-6);
-        assertEquals(10_000_000, acc.whaleSell, 1e-6);
-        assertEquals(500_000, acc.midBuy, 1e-6);
-        assertEquals(0, acc.midSell, 1e-6);
-        assertEquals(99_900, acc.retailBuy, 1e-6);
-        assertEquals(50_000, acc.retailSell, 1e-6);
-        assertEquals(acc.buyAmount, acc.whaleBuy + acc.midBuy + acc.retailBuy, 1e-6);
+        assertEquals(5, acc.tierNames.length);
+        assertEquals("개미", acc.tierNames[0]);
+        assertEquals(99_900, acc.tierBuy[0], 1e-6);
+        assertEquals(1, acc.tierCount[0]);
+        assertEquals(100_000, acc.tierBuy[1], 1e-6);
+        assertEquals(500_000, acc.tierSell[1], 1e-6);
+        assertEquals(5_000_000, acc.tierBuy[2], 1e-6);
+        assertEquals(50_000_000, acc.tierSell[3], 1e-6);
+        assertEquals(200_000_000, acc.tierBuy[4], 1e-6);
+        assertEquals(100_000_000.0, acc.tierMins[4], 1e-6);
+        double tierBuy = java.util.Arrays.stream(acc.tierBuy).sum();
+        assertEquals(acc.buyAmount, tierBuy, 1e-6);
+        assertEquals(4, aggregator.tierIndex(150_000_000));
+        assertEquals(0, aggregator.tierIndex(1));
     }
 
     @Test

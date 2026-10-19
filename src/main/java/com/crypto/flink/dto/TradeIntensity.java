@@ -1,5 +1,11 @@
 package com.crypto.flink.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 한 종목의 한 집계 구간에 대한 체결강도 지표.
  * 금액은 모두 KRW. Flink POJO 요건(기본 생성자, getter/setter)을 지킨다.
@@ -24,13 +30,13 @@ public class TradeIntensity {
     private double intensity;
     private double buyRatio;
     private long lastTradeTimestamp;
-    // 체결 한 건 금액으로 나눈 주체별 매수·매도 금액. 구간 경계는 설정(tiers.*)
-    private double whaleBuyAmount;
-    private double whaleSellAmount;
-    private double midBuyAmount;
-    private double midSellAmount;
-    private double retailBuyAmount;
-    private double retailSellAmount;
+    // 체결 한 건 금액으로 나눈 주체 구간(개미…고래)별 매수·매도·건수. 오름차순이고 구간 경계는 설정(tiers.*).
+    // 기본형 배열인 이유: List 필드는 Flink 가 Kryo 를 타는데 Java 17 에서는 JVM 옵션 없이 초기화에 실패한다
+    private String[] tierNames = new String[0];
+    private double[] tierMins = new double[0];
+    private double[] tierBuyAmounts = new double[0];
+    private double[] tierSellAmounts = new double[0];
+    private int[] tierTradeCounts = new int[0];
     private double openPrice;
     private double closePrice;
 
@@ -42,16 +48,57 @@ public class TradeIntensity {
         return openPrice > 0 ? (closePrice / openPrice - 1.0) * 100.0 : 0.0;
     }
 
-    public double getWhaleNetAmount() {
-        return whaleBuyAmount - whaleSellAmount;
+    /** 구간 목록 뷰. JSON 에는 읽기 전용으로 실리고, 소비자는 배열 필드로 역직렬화한다. */
+    @JsonProperty(access = JsonProperty.Access.READ_ONLY)
+    public List<TierAmount> getTiers() {
+        List<TierAmount> list = new ArrayList<>(tierNames.length);
+        for (int i = 0; i < tierNames.length; i++) {
+            TierAmount t = new TierAmount(tierNames[i], tierMins[i]);
+            t.buyAmount = tierBuyAmounts[i];
+            t.sellAmount = tierSellAmounts[i];
+            t.tradeCount = tierTradeCounts[i];
+            list.add(t);
+        }
+        return list;
     }
 
-    public double getMidNetAmount() {
-        return midBuyAmount - midSellAmount;
+    /** 테스트와 수동 구성용. 배열 필드를 채운다. */
+    @JsonIgnore
+    public void setTiers(List<TierAmount> tiers) {
+        int n = tiers.size();
+        tierNames = new String[n];
+        tierMins = new double[n];
+        tierBuyAmounts = new double[n];
+        tierSellAmounts = new double[n];
+        tierTradeCounts = new int[n];
+        for (int i = 0; i < n; i++) {
+            TierAmount t = tiers.get(i);
+            tierNames[i] = t.name;
+            tierMins[i] = t.minAmount;
+            tierBuyAmounts[i] = t.buyAmount;
+            tierSellAmounts[i] = t.sellAmount;
+            tierTradeCounts[i] = t.tradeCount;
+        }
+    }
+
+    /** 가장 큰 구간(고래). 구간이 없으면 빈 값. */
+    @JsonIgnore
+    public TierAmount whaleTier() {
+        return tierNames.length == 0 ? new TierAmount() : getTiers().get(tierNames.length - 1);
+    }
+
+    /** 가장 작은 구간(개미). */
+    @JsonIgnore
+    public TierAmount retailTier() {
+        return tierNames.length == 0 ? new TierAmount() : getTiers().get(0);
+    }
+
+    public double getWhaleNetAmount() {
+        return whaleTier().net();
     }
 
     public double getRetailNetAmount() {
-        return retailBuyAmount - retailSellAmount;
+        return retailTier().net();
     }
 
     public static double intensityOf(double buyAmount, double sellAmount) {
@@ -186,52 +233,44 @@ public class TradeIntensity {
         this.lastTradeTimestamp = lastTradeTimestamp;
     }
 
-    public double getWhaleBuyAmount() {
-        return whaleBuyAmount;
+    public String[] getTierNames() {
+        return tierNames;
     }
 
-    public void setWhaleBuyAmount(double whaleBuyAmount) {
-        this.whaleBuyAmount = whaleBuyAmount;
+    public void setTierNames(String[] tierNames) {
+        this.tierNames = tierNames;
     }
 
-    public double getWhaleSellAmount() {
-        return whaleSellAmount;
+    public double[] getTierMins() {
+        return tierMins;
     }
 
-    public void setWhaleSellAmount(double whaleSellAmount) {
-        this.whaleSellAmount = whaleSellAmount;
+    public void setTierMins(double[] tierMins) {
+        this.tierMins = tierMins;
     }
 
-    public double getMidBuyAmount() {
-        return midBuyAmount;
+    public double[] getTierBuyAmounts() {
+        return tierBuyAmounts;
     }
 
-    public void setMidBuyAmount(double midBuyAmount) {
-        this.midBuyAmount = midBuyAmount;
+    public void setTierBuyAmounts(double[] tierBuyAmounts) {
+        this.tierBuyAmounts = tierBuyAmounts;
     }
 
-    public double getMidSellAmount() {
-        return midSellAmount;
+    public double[] getTierSellAmounts() {
+        return tierSellAmounts;
     }
 
-    public void setMidSellAmount(double midSellAmount) {
-        this.midSellAmount = midSellAmount;
+    public void setTierSellAmounts(double[] tierSellAmounts) {
+        this.tierSellAmounts = tierSellAmounts;
     }
 
-    public double getRetailBuyAmount() {
-        return retailBuyAmount;
+    public int[] getTierTradeCounts() {
+        return tierTradeCounts;
     }
 
-    public void setRetailBuyAmount(double retailBuyAmount) {
-        this.retailBuyAmount = retailBuyAmount;
-    }
-
-    public double getRetailSellAmount() {
-        return retailSellAmount;
-    }
-
-    public void setRetailSellAmount(double retailSellAmount) {
-        this.retailSellAmount = retailSellAmount;
+    public void setTierTradeCounts(int[] tierTradeCounts) {
+        this.tierTradeCounts = tierTradeCounts;
     }
 
     public double getOpenPrice() {

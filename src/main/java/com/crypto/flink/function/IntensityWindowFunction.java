@@ -35,12 +35,12 @@ public class IntensityWindowFunction
         result.setIntensity(TradeIntensity.intensityOf(acc.buyAmount, acc.sellAmount));
         result.setBuyRatio(TradeIntensity.buyRatioOf(acc.buyAmount, acc.sellAmount));
         result.setLastTradeTimestamp(acc.lastTradeTimestamp);
-        result.setWhaleBuyAmount(acc.whaleBuy);
-        result.setWhaleSellAmount(acc.whaleSell);
-        result.setMidBuyAmount(acc.midBuy);
-        result.setMidSellAmount(acc.midSell);
-        result.setRetailBuyAmount(acc.retailBuy);
-        result.setRetailSellAmount(acc.retailSell);
+        // 누적기는 윈도우 상태로 계속 쓰이므로 복사해서 내보낸다
+        result.setTierNames(acc.tierNames.clone());
+        result.setTierMins(acc.tierMins.clone());
+        result.setTierBuyAmounts(acc.tierBuy.clone());
+        result.setTierSellAmounts(acc.tierSell.clone());
+        result.setTierTradeCounts(acc.tierCount.clone());
         result.setOpenPrice(acc.openPrice);
         result.setClosePrice(acc.closePrice);
         out.collect(result);

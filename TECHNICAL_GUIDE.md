@@ -104,7 +104,7 @@
 
 체결강도 = 매수 ÷ 매도 × 100. 매도가 0이면 9999.99로 막는다(`TradeIntensity.MAX_INTENSITY`). 항상 0~100인 `buyRatio`도 같이 낸다.
 
-누적기는 체결 한 건의 금액으로 고래·중형·개미를 나눠 구간별 매수·매도도 쌓는다(`tiers.whale-min-amount`, `tiers.retail-max-amount`). 이 값이 모든 윈도우와 5분 버킷(`intensity_bucket` 의 `whale_*`·`mid_*`·`retail_*`)에 실려 주체별 누적 그래프와 엇갈림 감지의 재료가 된다.
+누적기는 체결 한 건의 금액으로 주체 구간(기본 다섯: 개미·소형·중형·큰손·고래, `tiers.names`·`tiers.bounds`)을 나눠 구간별 매수·매도·건수를 `TierAmount` 목록으로 쌓는다. 이 목록이 모든 윈도우와 5분 버킷(`intensity_bucket.tiers` JSON)에 실려 주체별 그래프와 엇갈림 감지(가장 큰 구간 vs 가장 작은 구간)의 재료가 된다. 구간 수가 설정이라 컬럼으로 못 박지 않았고, 옛 `whale_*`·`mid_*`·`retail_*` 컬럼은 더 쓰지 않는다. 구간 값은 `TradeIntensity`와 누적기 모두 기본형 배열(`double[]`, `int[]`, `String[]`)이다. `List` 필드가 하나라도 있으면 Flink 가 Kryo 를 초기화하는데, Java 17 에서는 `--add-opens` 없이 초기화 자체가 실패해 Job 이 죽는다. JSON 의 `tiers` 목록은 배열에서 만든 읽기 전용 뷰다.
 
 ### 4.4 감지 파이프라인
 
@@ -216,3 +216,4 @@ Flink 1.18 API 기준이다. `env.fromData`(1.19)는 없고 `fromElements`를 �
 2. 새 감지 종류: `DetectionEvent` 에 type 상수와 팩토리, 필요한 필드를 더하고 `schema.sql` 에 `ADD COLUMN IF NOT EXISTS`, `DetectionEventRepository` 의 insert·mapRow 를 맞춘다. 대시보드 배지 색은 `index.html` 의 `.badge.<TYPE>`.
 3. 새 임계치: `DetectionRule` 필드·`overriddenBy`·`missingOrInvalidField`, `detection_rule` 컬럼, 저장소 upsert·mapRow, `DetectionRuleService` 의 초깃값.
 4. 감지기는 반드시 하네스 테스트를 같이 둔다. 실데이터로는 임계치를 넘는 순간을 기다릴 수 없다.
+5. 테스트용 생성자를 더해 생성자가 둘이 되는 Spring 빈은 쓸 생성자에 `@Autowired` 를 명시한다. 빠뜨리면 기동 시 "No default constructor found" 로 죽는다(두 번 걸렸다).

@@ -5,6 +5,7 @@ import com.crypto.flink.store.IntensityBucketRepository.Bucket;
 import com.crypto.flink.summary.DailySummaryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -23,27 +24,41 @@ import java.util.Map;
  */
 @RestController
 @RequestMapping("/api/history")
-@Tag(name = "History", description = "5분 버킷 이력. 종목별 매수 비율·순매수 추이와 하루 누적 순매수")
+@Tag(name = "History", description = "5분 버킷 이력. 종목별 매수 비율·순매수 추이와 하루 누적 순매수, 주체 구간별 누적")
 public class HistoryController {
 
     private static final int MAX_HOURS = 72;
 
     private final IntensityBucketRepository buckets;
+    private final List<String> tierNames;
+    private final List<Double> tierBounds;
 
-    public HistoryController(IntensityBucketRepository buckets) {
+    public HistoryController(IntensityBucketRepository buckets,
+            @Value("${tiers.names:개미,소형,중형,큰손,고래}") List<String> tierNames,
+            @Value("${tiers.bounds:100000,1000000,10000000,100000000}") List<Double> tierBounds) {
         this.buckets = buckets;
+        this.tierNames = tierNames;
+        this.tierBounds = tierBounds;
     }
 
     public record Point(long t, double buyAmount, double sellAmount, double netAmount, double totalAmount,
-            double buyRatio, double intensity, int tradeCount, double whaleNet, double midNet, double retailNet) {
+            double buyRatio, double intensity, int tradeCount, double[] tierNet, double closePrice) {
         static Point of(Bucket b) {
             return new Point(b.windowEnd(), b.buyAmount(), b.sellAmount(), b.netAmount(), b.totalAmount(),
-                    b.buyRatio(), b.intensity(), b.tradeCount(), b.whaleNet(), b.midNet(), b.retailNet());
+                    b.buyRatio(), b.intensity(), b.tradeCount(), b.tierNets(), b.closePrice());
         }
     }
 
-    public record CumulativePoint(long t, double cumulativeNet, double cumulativeTotal,
-            double cumulativeWhaleNet, double cumulativeMidNet, double cumulativeRetailNet) {
+    public record CumulativePoint(long t, double cumulativeNet, double cumulativeTotal, double[] cumulativeTierNet) {
+    }
+
+    public record TierSpec(List<String> names, List<Double> bounds) {
+    }
+
+    @GetMapping("/tiers")
+    @Operation(summary = "주체 구간 정의", description = "names 는 오름차순 구간 이름, bounds 는 구간 사이 경계(KRW). names 가 하나 더 많다")
+    public TierSpec tiers() {
+        return new TierSpec(tierNames, tierBounds);
     }
 
     @GetMapping
@@ -67,22 +82,27 @@ public class HistoryController {
     }
 
     @GetMapping("/cumulative")
-    @Operation(summary = "하루(KST) 누적 순매수·누적 거래대금", description = "date 는 YYYY-MM-DD, 비우면 오늘. 5분마다 한 점")
+    @Operation(summary = "하루(KST) 누적 순매수·누적 거래대금·주체 구간별 누적 순매수", description = "date 는 YYYY-MM-DD, 비우면 오늘. 5분마다 한 점")
     public Map<String, List<CumulativePoint>> cumulative(@RequestParam(required = false) String date) {
         LocalDate day = date == null ? LocalDate.now(DailySummaryService.KST) : parse(date);
         long from = day.atStartOfDay(DailySummaryService.KST).toInstant().toEpochMilli();
         long to = day.plusDays(1).atStartOfDay(DailySummaryService.KST).toInstant().toEpochMilli();
+        int n = tierNames.size();
         Map<String, List<CumulativePoint>> byCode = new LinkedHashMap<>();
         Map<String, double[]> running = new LinkedHashMap<>();
         for (Bucket b : buckets.bucketsBetween(from, to)) {
-            double[] sum = running.computeIfAbsent(b.code(), c -> new double[5]);
+            double[] sum = running.computeIfAbsent(b.code(), c -> new double[2 + n]);
             sum[0] += b.netAmount();
             sum[1] += b.totalAmount();
-            sum[2] += b.whaleNet();
-            sum[3] += b.midNet();
-            sum[4] += b.retailNet();
+            double[] nets = b.tierNets();
+            // 구간 수가 바뀐 옛 행은 건너뛴다
+            if (nets.length == n) {
+                for (int i = 0; i < n; i++) {
+                    sum[2 + i] += nets[i];
+                }
+            }
             byCode.computeIfAbsent(b.code(), c -> new ArrayList<>())
-                    .add(new CumulativePoint(b.windowEnd(), sum[0], sum[1], sum[2], sum[3], sum[4]));
+                    .add(new CumulativePoint(b.windowEnd(), sum[0], sum[1], java.util.Arrays.copyOfRange(sum, 2, 2 + n)));
         }
         return byCode;
     }

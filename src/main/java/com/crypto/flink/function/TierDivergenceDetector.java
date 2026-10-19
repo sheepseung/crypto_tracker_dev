@@ -43,13 +43,13 @@ public class TierDivergenceDetector extends KeyedProcessFunction<String, TradeIn
         if (w.getWindowSeconds() != windowSeconds) {
             return;
         }
-        double whaleTotal = w.getWhaleBuyAmount() + w.getWhaleSellAmount();
-        double retailTotal = w.getRetailBuyAmount() + w.getRetailSellAmount();
+        double whaleTotal = w.whaleTier().total();
+        double retailTotal = w.retailTier().total();
         if (whaleTotal < minWhaleAmount || retailTotal < minRetailAmount) {
             return;
         }
-        double whaleLean = w.getWhaleNetAmount() / whaleTotal;
-        double retailLean = w.getRetailNetAmount() / retailTotal;
+        double whaleLean = w.whaleTier().net() / whaleTotal;
+        double retailLean = w.retailTier().net() / retailTotal;
         if (Math.abs(whaleLean) < minTierRatio || Math.abs(retailLean) < minTierRatio) {
             return;
         }

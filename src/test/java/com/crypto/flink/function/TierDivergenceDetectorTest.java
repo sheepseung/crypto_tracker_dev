@@ -78,10 +78,13 @@ class TierDivergenceDetectorTest {
         w.setWindowSeconds(900);
         w.setWindowEnd(t);
         w.setLastTradeTimestamp(t);
-        w.setWhaleBuyAmount(whaleBuy);
-        w.setWhaleSellAmount(whaleSell);
-        w.setRetailBuyAmount(retailBuy);
-        w.setRetailSellAmount(retailSell);
+        com.crypto.flink.dto.TierAmount retail = new com.crypto.flink.dto.TierAmount("개미", 0);
+        retail.buyAmount = retailBuy;
+        retail.sellAmount = retailSell;
+        com.crypto.flink.dto.TierAmount whale = new com.crypto.flink.dto.TierAmount("고래", 100_000_000);
+        whale.buyAmount = whaleBuy;
+        whale.sellAmount = whaleSell;
+        w.setTiers(List.of(retail, new com.crypto.flink.dto.TierAmount("중형", 1_000_000), whale));
         return w;
     }
 }

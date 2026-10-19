@@ -42,8 +42,8 @@ public class DetectionService implements FlinkPipeline {
     private final int volumeSlideSeconds;
     private final int volumeBaselineHours;
     private final int volumeMinBaselineBuckets;
-    private final double whaleMinAmount;
-    private final double retailMaxAmount;
+    private final java.util.List<String> tierNames;
+    private final java.util.List<Double> tierBounds;
     private final int divergenceWindowSeconds;
     private final double divergenceMinTierRatio;
     private final double divergenceMinWhaleAmount;
@@ -64,8 +64,8 @@ public class DetectionService implements FlinkPipeline {
             @Value("${detection.volume-surge.baseline-hours:24}") int volumeBaselineHours,
             @Value("${detection.volume-surge.min-baseline-buckets:12}") int volumeMinBaselineBuckets,
             @Value("${detection.volume-surge.seed-from-upbit:true}") boolean seedFromUpbit,
-            @Value("${tiers.whale-min-amount:10000000}") double whaleMinAmount,
-            @Value("${tiers.retail-max-amount:100000}") double retailMaxAmount,
+            @Value("${tiers.names:개미,소형,중형,큰손,고래}") java.util.List<String> tierNames,
+            @Value("${tiers.bounds:100000,1000000,10000000,100000000}") java.util.List<Double> tierBounds,
             @Value("${detection.divergence.window-seconds:900}") int divergenceWindowSeconds,
             @Value("${detection.divergence.min-tier-ratio:0.3}") double divergenceMinTierRatio,
             @Value("${detection.divergence.min-whale-amount:100000000}") double divergenceMinWhaleAmount,
@@ -74,7 +74,7 @@ public class DetectionService implements FlinkPipeline {
             RulesProvider rulesProvider,
             @Qualifier("eventsSink") KafkaSink<String> eventsSink) {
         this(enabled, largeBurstWindowSeconds, priceWindowSeconds, volumeWindowSeconds, volumeSlideSeconds,
-                volumeBaselineHours, volumeMinBaselineBuckets, whaleMinAmount, retailMaxAmount,
+                volumeBaselineHours, volumeMinBaselineBuckets, tierNames, tierBounds,
                 divergenceWindowSeconds, divergenceMinTierRatio, divergenceMinWhaleAmount, divergenceMinRetailAmount,
                 divergenceCooldownSeconds, rulesProvider,
                 seedFromUpbit ? new UpbitCandleBaselineSource() : BaselineSource.none(), eventsSink);
@@ -82,7 +82,7 @@ public class DetectionService implements FlinkPipeline {
 
     DetectionService(boolean enabled, int largeBurstWindowSeconds, int priceWindowSeconds, int volumeWindowSeconds,
             int volumeSlideSeconds, int volumeBaselineHours, int volumeMinBaselineBuckets,
-            double whaleMinAmount, double retailMaxAmount, int divergenceWindowSeconds, double divergenceMinTierRatio,
+            java.util.List<String> tierNames, java.util.List<Double> tierBounds, int divergenceWindowSeconds, double divergenceMinTierRatio,
             double divergenceMinWhaleAmount, double divergenceMinRetailAmount, int divergenceCooldownSeconds,
             RulesProvider rulesProvider, BaselineSource baselineSource, KafkaSink<String> eventsSink) {
         this.enabled = enabled;
@@ -92,8 +92,8 @@ public class DetectionService implements FlinkPipeline {
         this.volumeSlideSeconds = volumeSlideSeconds;
         this.volumeBaselineHours = volumeBaselineHours;
         this.volumeMinBaselineBuckets = volumeMinBaselineBuckets;
-        this.whaleMinAmount = whaleMinAmount;
-        this.retailMaxAmount = retailMaxAmount;
+        this.tierNames = tierNames;
+        this.tierBounds = tierBounds;
         this.divergenceWindowSeconds = divergenceWindowSeconds;
         this.divergenceMinTierRatio = divergenceMinTierRatio;
         this.divergenceMinWhaleAmount = divergenceMinWhaleAmount;
@@ -167,7 +167,7 @@ public class DetectionService implements FlinkPipeline {
         return trades
                 .keyBy(CryptoTrade::getCode)
                 .window(SlidingEventTimeWindows.of(Time.seconds(windowSeconds), Time.seconds(slideSeconds)))
-                .aggregate(new TradeAmountAggregator(whaleMinAmount, retailMaxAmount), new IntensityWindowFunction())
+                .aggregate(new TradeAmountAggregator(tierNames, tierBounds), new IntensityWindowFunction())
                 .name("Detection Window " + windowSeconds + "s");
     }
 }

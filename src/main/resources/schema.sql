@@ -46,6 +46,8 @@ ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS mid_buy DOUBLE PRECISION N
 ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS mid_sell DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS retail_buy DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS retail_sell DOUBLE PRECISION NOT NULL DEFAULT 0;
+-- 주체 구간별 매수·매도·건수 JSON 배열. 구간 수가 설정이라 컬럼으로 못 박지 않는다. whale_*·mid_*·retail_* 는 옛 3단계 흔적이라 더 쓰지 않는다
+ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS tiers TEXT;
 ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS open_price DOUBLE PRECISION NOT NULL DEFAULT 0;
 ALTER TABLE intensity_bucket ADD COLUMN IF NOT EXISTS close_price DOUBLE PRECISION NOT NULL DEFAULT 0;
 
