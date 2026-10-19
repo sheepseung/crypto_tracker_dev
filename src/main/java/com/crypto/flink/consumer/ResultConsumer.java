@@ -4,6 +4,7 @@ import com.crypto.flink.dto.DetectionEvent;
 import com.crypto.flink.dto.TradeIntensity;
 import com.crypto.flink.store.DetectionEventRepository;
 import com.crypto.flink.store.MetricsStore;
+import com.crypto.flink.stream.StreamBroadcaster;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
@@ -23,12 +24,14 @@ public class ResultConsumer {
     private final ObjectMapper objectMapper;
     private final MetricsStore metricsStore;
     private final DetectionEventRepository eventRepository;
+    private final StreamBroadcaster broadcaster;
 
     public ResultConsumer(ObjectMapper objectMapper, MetricsStore metricsStore,
-            DetectionEventRepository eventRepository) {
+            DetectionEventRepository eventRepository, StreamBroadcaster broadcaster) {
         this.objectMapper = objectMapper;
         this.metricsStore = metricsStore;
         this.eventRepository = eventRepository;
+        this.broadcaster = broadcaster;
     }
 
     // 지표는 최신 값만 의미가 있어 기동 시 쌓인 옛 메시지를 건너뛴다
@@ -36,7 +39,9 @@ public class ResultConsumer {
             properties = "auto.offset.reset=latest")
     public void onMetric(String json) {
         try {
-            metricsStore.put(objectMapper.readValue(json, TradeIntensity.class));
+            TradeIntensity intensity = objectMapper.readValue(json, TradeIntensity.class);
+            metricsStore.put(intensity);
+            broadcaster.publishMetric(intensity);
         } catch (JsonProcessingException e) {
             logger.warn("지표 메시지 파싱 실패: {}", json, e);
         }
@@ -50,6 +55,7 @@ public class ResultConsumer {
             DetectionEvent event = objectMapper.readValue(json, DetectionEvent.class);
             if (eventRepository.save(event)) {
                 logger.info("감지 이벤트: {}", event.getMessage());
+                broadcaster.publishEvent(event);
             }
         } catch (JsonProcessingException e) {
             logger.warn("이벤트 메시지 파싱 실패: {}", json, e);

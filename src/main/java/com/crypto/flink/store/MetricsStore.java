@@ -49,4 +49,12 @@ public class MetricsStore {
     public Collection<String> codes() {
         return latestByCode.keySet().stream().sorted().toList();
     }
+
+    /** 모든 종목·구간의 최신 값. 대시보드 첫 화면용. */
+    public List<TradeIntensity> all() {
+        return latestByCode.values().stream()
+                .flatMap(windows -> windows.values().stream())
+                .sorted(Comparator.comparing(TradeIntensity::getCode).thenComparingInt(TradeIntensity::getWindowSeconds))
+                .toList();
+    }
 }

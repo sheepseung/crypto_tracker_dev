@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crypto Tracker</title>
+<style>
+  :root {
+    --bg: #0f1419; --panel: #171d26; --line: #2a3340; --text: #e6e9ee; --muted: #8b95a5;
+    --buy: #e5484d; --sell: #3b82f6; --accent: #f5a524;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
+  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 16px; margin: 0; }
+  #status { margin-left: auto; color: var(--muted); font-size: 12px; }
+  #status.on::before { content: "●"; color: #22c55e; margin-right: 6px; }
+  #status.off::before { content: "●"; color: var(--buy); margin-right: 6px; }
+  main { display: grid; grid-template-columns: 1fr 380px; gap: 16px; padding: 16px 20px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
+  section h2 { font-size: 13px; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; gap: 12px; }
+  .tabs button { background: none; border: 1px solid var(--line); color: var(--muted); padding: 2px 10px; border-radius: 999px; cursor: pointer; font-size: 12px; }
+  .tabs button.active { color: var(--text); border-color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th { color: var(--muted); font-weight: 500; font-size: 12px; }
+  th:first-child, td:first-child { text-align: left; }
+  td.code { font-weight: 600; }
+  .buy { color: var(--buy); }
+  .sell { color: var(--sell); }
+  .bar { position: relative; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--buy); }
+  .muted { color: var(--muted); font-size: 12px; }
+  #events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto; }
+  #events li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+  #events .when { color: var(--muted); font-size: 12px; }
+  .badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-right: 6px; border: 1px solid var(--line); }
+  .badge.LARGE_TRADE, .badge.LARGE_TRADE_BURST { border-color: var(--accent); color: var(--accent); }
+  .badge.PRICE_SURGE { border-color: var(--buy); color: var(--buy); }
+  .badge.PRICE_DROP { border-color: var(--sell); color: var(--sell); }
+  .empty { color: var(--muted); padding: 16px 0; text-align: center; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>Crypto Tracker</h1>
+  <span class="muted">업비트 체결 · BTC / ETH / DOGE</span>
+  <span id="status" class="off">연결 중</span>
+</header>
+<main>
+  <section>
+    <h2>체결강도 <span class="tabs" id="tabs"></span> <span class="muted" id="updated"></span></h2>
+    <table>
+      <thead><tr><th>종목</th><th>체결강도</th><th>매수 비율</th><th>순매수</th><th>거래대금</th><th>체결</th><th>기준 시각</th></tr></thead>
+      <tbody id="rows"><tr><td colspan="7" class="empty">지표를 기다리는 중</td></tr></tbody>
+    </table>
+    <p class="muted">체결강도 = 매수 금액 ÷ 매도 금액 × 100. 100보다 크면 매수 우위. 5초마다 갱신.</p>
+  </section>
+  <section>
+    <h2>감지 이벤트 <span class="muted">대량 체결 · 급등락</span></h2>
+    <ul id="events"><li class="empty">아직 이벤트가 없습니다</li></ul>
+  </section>
+</main>
+<script>
+  const WINDOWS = [[60, '1분'], [300, '5분'], [900, '15분']];
+  const MAX_EVENTS = 100;
+  const metrics = new Map();   // key: code|window
+  let currentWindow = 300;
+
+  const fmtKrw = v => {
+    const a = Math.abs(v);
+    if (a >= 1e8) return (v / 1e8).toFixed(2) + '억';
+    if (a >= 1e4) return Math.round(v / 1e4).toLocaleString() + '만';
+    return Math.round(v).toLocaleString();
+  };
+  const fmtTime = iso => iso ? iso.slice(11, 19) : '';
+  const signed = v => (v > 0 ? '+' : '') + fmtKrw(v);
+
+  function renderTabs() {
+    const el = document.getElementById('tabs');
+    el.innerHTML = WINDOWS.map(([s, label]) =>
+      `<button data-w="${s}" class="${s === currentWindow ? 'active' : ''}">${label}</button>`).join('');
+    el.querySelectorAll('button').forEach(b => b.onclick = () => { currentWindow = +b.dataset.w; renderTabs(); renderRows(); });
+  }
+
+  function renderRows() {
+    const rows = [...metrics.values()].filter(m => m.windowSeconds === currentWindow)
+      .sort((a, b) => b.netAmount - a.netAmount);
+    const body = document.getElementById('rows');
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="empty">지표를 기다리는 중</td></tr>'; return; }
+    body.innerHTML = rows.map(m => `
+      <tr>
+        <td class="code">${m.code.replace('KRW-', '')}</td>
+        <td class="${m.intensity >= 100 ? 'buy' : 'sell'}">${m.intensity.toFixed(1)}</td>
+        <td>${m.buyRatio.toFixed(1)}%<div class="bar"><i style="width:${m.buyRatio}%"></i></div></td>
+        <td class="${m.netAmount >= 0 ? 'buy' : 'sell'}">${signed(m.netAmount)}</td>
+        <td>${fmtKrw(m.totalAmount)}</td>
+        <td>${m.tradeCount}</td>
+        <td class="muted">${fmtTime(m.windowEndAt)}</td>
+      </tr>`).join('');
+    const latest = rows.reduce((t, m) => Math.max(t, m.windowEnd), 0);
+    document.getElementById('updated').textContent = '갱신 ' + new Date(latest).toLocaleTimeString('ko-KR');
+  }
+
+  function putMetric(m) {
+    const key = m.code + '|' + m.windowSeconds;
+    const cur = metrics.get(key);
+    if (!cur || m.windowEnd >= cur.windowEnd) metrics.set(key, m);
+  }
+
+  function eventItem(e) {
+    const li = document.createElement('li');
+    li.innerHTML = `<div class="when">${e.eventTimeAt ? e.eventTimeAt.slice(0, 19).replace('T', ' ') : ''}</div>
+      <span class="badge ${e.type}">${e.type}</span>${e.message || ''}`;
+    return li;
+  }
+
+  function setEvents(list) {
+    const ul = document.getElementById('events');
+    ul.innerHTML = '';
+    if (!list.length) { ul.innerHTML = '<li class="empty">아직 이벤트가 없습니다</li>'; return; }
+    list.forEach(e => ul.appendChild(eventItem(e)));
+  }
+
+  function prependEvent(e) {
+    const ul = document.getElementById('events');
+    const empty = ul.querySelector('.empty');
+    if (empty) empty.remove();
+    ul.prepend(eventItem(e));
+    while (ul.children.length > MAX_EVENTS) ul.lastChild.remove();
+  }
+
+  function connect() {
+    const status = document.getElementById('status');
+    const es = new EventSource('/api/stream');
+    es.onopen = () => { status.textContent = '실시간 연결'; status.className = 'on'; };
+    es.onerror = () => { status.textContent = '연결 끊김, 재시도 중'; status.className = 'off'; };
+    es.addEventListener('snapshot', ev => {
+      const s = JSON.parse(ev.data);
+      metrics.clear();
+      s.metrics.forEach(putMetric);
+      renderRows();
+      setEvents(s.events);
+    });
+    es.addEventListener('metric', ev => { putMetric(JSON.parse(ev.data)); renderRows(); });
+    es.addEventListener('event', ev => prependEvent(JSON.parse(ev.data)));
+  }
+
+  renderTabs();
+  connect();
+</script>
+</body>
+</html>

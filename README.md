@@ -266,7 +266,11 @@ GET /api/events?code=&type=&since=&limit=50    # 감지 이벤트 최신순. sin
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html
 
-대시보드는 다음 단계이고, 메신저 전송은 범위 밖이다.
+### 4. 대시보드 (static/index.html + SSE)
+
+http://localhost:8082/ 에서 종목별 체결강도 표(1분·5분·15분 전환)와 감지 이벤트 목록을 본다. 페이지는 `GET /api/stream`(SSE)에 붙어 연결 직후 `snapshot`(현재 지표 전체와 최근 이벤트 50건)을 받고, 이후 `metric`·`event`가 올 때마다 바로 갱신한다. 15초마다 빈 주석을 보내 연결을 유지한다.
+
+메신저 전송은 범위 밖이다.
 
 ## 🔧 설정
 
