@@ -1,0 +1,10 @@
+.git
+.gradle
+build
+.venv
+venv
+.idea
+*.iml
+.claude
+.playwright-mcp
+flink-data

@@ -129,7 +129,9 @@
 
 Broadcast State 로 재시작 없이 반영하는 방식은 감지기 셋을 `BroadcastProcessFunction`으로 다시 써야 해서 미뤘다. 규칙 변경이 잦아지면 그때 옮긴다.
 
-## 7. 빌드·테스트
+## 7. 빌드·테스트·배포
+
+배포는 `docker compose up -d --build` 한 번이다. `Dockerfile`이 Gradle 이미지에서 `bootJar`를 만들고 JRE 이미지에서 실행한다. 이때 jar를 풀어 `java -cp classes:lib/* ...`로 띄운다. fat jar를 `java -jar`로 띄우면 Spring Boot 의 중첩 jar 클래스로더 때문에 Flink 로컬 JobMaster 가 시스템 클래스로더에서 `ExecutionConfig`를 못 찾아 Job 이 시작되지 않는다. `scripts/Dockerfile`은 producer 이미지다. `kafka-init` 서비스가 토픽을 만든 뒤에야 앱과 producer 가 뜬다.
 
 로컬에 JDK 17이 없어도 Docker로 돌릴 수 있다.
 

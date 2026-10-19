@@ -81,8 +81,6 @@ node_modules/
 # Flink
 flink-data/
 
-# Docker
-.dockerignore
 
 # Python
 __pycache__/

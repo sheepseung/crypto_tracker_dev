@@ -59,13 +59,11 @@ tasks.named('test') {
     useJUnitPlatform()
 }
 
-// Flink 클러스터에 제출할 'thin' Job JAR를 생성하기 위한 설정
-// 이 설정으로 인해 'java -jar'로 단독 실행은 불가능함
+// Flink 는 Spring Boot 프로세스 안에서 돌므로 클러스터 제출용 thin jar 가 아니라 실행 가능한 jar 를 만든다
 bootJar {
-    enabled = false
+    archiveFileName = 'crypto-tracker.jar'
 }
 
 jar {
-    enabled = true
-    archiveClassifier = ''
+    enabled = false
 }

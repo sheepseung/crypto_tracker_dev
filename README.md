@@ -47,6 +47,21 @@
 
 ## 🚀 빌드 및 실행
 
+### 0. 한 번에 띄우기 (배포)
+
+Docker만 있으면 된다. 앱과 수집기 이미지를 빌드하고 Kafka·PostgreSQL·토픽 초기화까지 한 번에 올린다. 컨테이너는 `restart: unless-stopped`라 죽거나 재부팅해도 다시 뜬다.
+
+```bash
+docker compose up -d --build        # 처음 또는 코드 변경 뒤
+docker compose ps                   # app, producer 가 Up 이면 http://localhost:8082/
+docker compose logs -f app          # 기동 로그. "Flink Job 시작" 이 보이면 된다
+docker compose down                 # 내리기 (이력 DB 는 postgres-data 볼륨에 남는다)
+```
+
+종목을 바꾸려면 `docker-compose.yml`의 `producer` 환경 변수 `UPBIT_MARKETS`를 고치고 `docker compose up -d producer`. 같은 파일 그대로 VPS에 복사해 같은 명령으로 띄울 수 있다. 외부에 공개하려면 도메인·HTTPS·인증은 따로 붙여야 한다.
+
+아래 1~9는 앱을 Gradle로 직접 돌리는 개발용 절차다.
+
 ### 1. 사전 요구사항
 
 ```bash

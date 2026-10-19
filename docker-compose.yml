@@ -1,10 +1,8 @@
-# docker-compose.yml
-version: '3'
-
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.5.3
     container_name: zookeeper
+    restart: unless-stopped
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -12,6 +10,7 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.5.3
     container_name: kafka
+    restart: unless-stopped
     depends_on:
       - zookeeper
     ports:
@@ -24,11 +23,30 @@ services:
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD-SHELL", "kafka-topics --bootstrap-server localhost:9092 --list >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
 
-  # Kafka UI (AKHQ) 추가
+  # 토픽을 미리 만든다. Flink 소스가 없는 토픽을 구독하면 파티션을 못 찾아 조용히 멈출 수 있다
+  kafka-init:
+    image: confluentinc/cp-kafka:7.5.3
+    container_name: kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for t in crypto-trades crypto-trades-dlq crypto-metrics crypto-events; do
+          kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic $$t --replication-factor 1 --partitions 1
+        done
+
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
+    restart: unless-stopped
     depends_on:
       - kafka
     ports:
@@ -39,10 +57,11 @@ services:
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
       KAFKA_CLUSTERS_0_READONLY: false
 
-  # 감지 이벤트 이력 저장소. Flink Job 은 Spring Boot 안에서 돌므로 별도 Flink 클러스터는 두지 않는다
+  # 감지 이벤트 이력과 감지 규칙 저장소. Flink Job 은 앱 안에서 돌므로 별도 Flink 클러스터는 두지 않는다
   postgres:
     image: postgres:16-alpine
     container_name: postgres
+    restart: unless-stopped
     ports:
       - "5432:5432"
     environment:
@@ -51,6 +70,44 @@ services:
       POSTGRES_PASSWORD: crypto
     volumes:
       - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U crypto -d crypto"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  # Spring Boot + 내장 Flink Job + 대시보드 (http://localhost:8082)
+  app:
+    build: .
+    image: crypto-tracker-app
+    container_name: crypto-app
+    restart: unless-stopped
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8082:8082"
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/crypto
+      SPRING_DATASOURCE_USERNAME: crypto
+      SPRING_DATASOURCE_PASSWORD: crypto
+
+  # 업비트 체결 수집기. 끊기면 스스로 재접속하고, 프로세스가 죽으면 Docker 가 다시 띄운다
+  producer:
+    build: ./scripts
+    image: crypto-tracker-producer
+    container_name: crypto-producer
+    restart: unless-stopped
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:29092
+      KAFKA_TOPIC: crypto-trades
+      UPBIT_MARKETS: KRW-BTC,KRW-ETH,KRW-DOGE
 
 volumes:
   postgres-data:
