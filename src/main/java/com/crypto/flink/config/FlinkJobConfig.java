@@ -9,6 +9,7 @@ import org.apache.flink.streaming.api.environment.CheckpointConfig;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Scope;
 
 /**
  * Flink Job 설정을 위한 Configuration 클래스
@@ -85,9 +86,11 @@ public class FlinkJobConfig {
     }
 
     /**
-     * StreamExecutionEnvironment 설정
+     * StreamExecutionEnvironment 설정.
+     * 환경에는 붙인 연산이 쌓이므로 Job 을 다시 띄울 때마다 새 인스턴스를 받도록 prototype 으로 둔다.
      */
     @Bean
+    @Scope("prototype")
     public StreamExecutionEnvironment streamExecutionEnvironment() {
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 

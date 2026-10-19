@@ -2,6 +2,7 @@ package com.crypto.flink.function;
 
 import com.crypto.flink.dto.CryptoTrade;
 import com.crypto.flink.dto.DetectionEvent;
+import com.crypto.flink.rules.TestRules;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.ProcessFunctionTestHarnesses;
@@ -24,7 +25,7 @@ class PriceMoveDetectorTest {
     @BeforeEach
     void setUp() throws Exception {
         harness = ProcessFunctionTestHarnesses.forKeyedProcessFunction(
-                new PriceMoveDetector(300, 2.0, 300), CryptoTrade::getCode, Types.STRING);
+                new PriceMoveDetector(300, TestRules.defaults()), CryptoTrade::getCode, Types.STRING);
     }
 
     @AfterEach

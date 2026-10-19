@@ -46,6 +46,8 @@ flink:
   parallelism: 1 # 병렬 처리 수
 
 # 감지 설정 (금액은 원화, 시간은 체결 시각 기준)
+# 임계치·배수·쿨다운은 DB(detection_rule)에 기본 규칙이 없을 때 한 번 심는 초깃값이고, 이후는 /api/rules 로 바꾼다.
+# 구간 길이(window·slide·baseline)는 파이프라인 구조라 여기서만 바꾼다.
 detection:
   large-trade:
     single-amount: 300000000 # 단일 체결 금액 임계치 (3억 원)

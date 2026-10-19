@@ -274,7 +274,23 @@ GET /api/events?code=&type=&since=&limit=50    # 감지 이벤트 최신순. sin
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html
 
-### 4. 대시보드 (static/index.html + SSE)
+### 4. 감지 규칙 변경 (RulesController)
+
+임계치·배수·쿨다운은 PostgreSQL `detection_rule`에 있고, 기본 규칙(`*`) 위에 종목별 덮어쓰기를 얹는다. 종목마다 거래 규모가 달라 DOGE 에 BTC 기준을 그대로 쓰면 걸리지 않기 때문이다. 바꾸면 Flink Job 만 취소하고 새 임계치로 다시 띄운다(2~3초, 쿨다운과 5분 가격 이력은 초기화되고 거래량 기준선은 5분봉으로 다시 채워진다). 구간 길이(10초·5분·24시간)는 파이프라인 구조라 `application.yml`에서만 바꾼다.
+
+```
+GET    /api/rules              # defaults, overrides, effective(덮어쓰기를 합친 종목별 유효 규칙)
+PUT    /api/rules/default      # 기본 규칙 전체 교체 (모든 값 필수)
+PUT    /api/rules/KRW-DOGE     # 종목 덮어쓰기. 준 값만 바꾼다
+DELETE /api/rules/KRW-DOGE     # 덮어쓰기 삭제, 다시 기본 규칙
+```
+
+```bash
+curl -X PUT localhost:8082/api/rules/KRW-DOGE -H 'Content-Type: application/json' \
+  -d '{"largeSingleAmount": 50000000, "priceThresholdPercent": 3.0}'
+```
+
+### 5. 대시보드 (static/index.html + SSE)
 
 http://localhost:8082/ 에서 종목별 체결강도 표(1분·5분·15분 전환)와 감지 이벤트 목록을 본다. 페이지는 `GET /api/stream`(SSE)에 붙어 연결 직후 `snapshot`(현재 지표 전체와 최근 이벤트 50건)을 받고, 이후 `metric`·`event`가 올 때마다 바로 갱신한다. 15초마다 빈 주석을 보내 연결을 유지한다.
 

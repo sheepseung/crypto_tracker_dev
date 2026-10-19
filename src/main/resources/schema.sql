@@ -19,5 +19,17 @@ CREATE TABLE IF NOT EXISTS detection_event (
 ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS baseline_amount DOUBLE PRECISION;
 ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS ratio DOUBLE PRECISION;
 
+CREATE TABLE IF NOT EXISTS detection_rule (
+    code                    VARCHAR(16) PRIMARY KEY,
+    large_single_amount     DOUBLE PRECISION,
+    large_burst_amount      DOUBLE PRECISION,
+    large_cooldown_seconds  INTEGER,
+    price_threshold_percent DOUBLE PRECISION,
+    price_cooldown_seconds  INTEGER,
+    volume_multiplier       DOUBLE PRECISION,
+    volume_cooldown_seconds INTEGER,
+    updated_at              TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE INDEX IF NOT EXISTS idx_detection_event_code_time ON detection_event (code, event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_detection_event_type_time ON detection_event (type, event_time DESC);

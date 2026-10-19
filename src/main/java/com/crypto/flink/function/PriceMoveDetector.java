@@ -2,6 +2,8 @@ package com.crypto.flink.function;
 
 import com.crypto.flink.dto.CryptoTrade;
 import com.crypto.flink.dto.DetectionEvent;
+import com.crypto.flink.rules.DetectionRule;
+import com.crypto.flink.rules.DetectionRules;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.state.MapState;
@@ -17,7 +19,7 @@ import java.util.List;
 /**
  * F3 급등·급락 감지. 종목별로 window 안의 가장 오래된 체결가를 기준으로 현재가 변동률을 본다.
  * 같은 방향은 cooldown 동안 다시 내지 않되, 직전 이벤트 가격에서 threshold 만큼 더 움직이면 cooldown 중에도 낸다.
- * 시간은 모두 체결 시각 기준이다.
+ * 시간은 모두 체결 시각 기준이다. 임계치와 cooldown 은 종목별 규칙에서 읽는다.
  */
 public class PriceMoveDetector extends KeyedProcessFunction<String, CryptoTrade, DetectionEvent> {
 
@@ -39,17 +41,15 @@ public class PriceMoveDetector extends KeyedProcessFunction<String, CryptoTrade,
     private static final String DOWN = "DOWN";
 
     private final int windowSeconds;
-    private final double thresholdPercent;
-    private final long cooldownMillis;
+    private final DetectionRules rules;
 
     private transient ListState<PriceAt> prices;
     private transient MapState<String, Long> lastEmitted;
     private transient MapState<String, Double> lastEmittedPrice;
 
-    public PriceMoveDetector(int windowSeconds, double thresholdPercent, int cooldownSeconds) {
+    public PriceMoveDetector(int windowSeconds, DetectionRules rules) {
         this.windowSeconds = windowSeconds;
-        this.thresholdPercent = thresholdPercent;
-        this.cooldownMillis = cooldownSeconds * 1000L;
+        this.rules = rules;
     }
 
     @Override
@@ -62,6 +62,9 @@ public class PriceMoveDetector extends KeyedProcessFunction<String, CryptoTrade,
 
     @Override
     public void processElement(CryptoTrade trade, Context ctx, Collector<DetectionEvent> out) throws Exception {
+        DetectionRule rule = rules.resolve(trade.getCode());
+        double thresholdPercent = rule.getPriceThresholdPercent();
+        long cooldownMillis = rule.getPriceCooldownSeconds() * 1000L;
         long now = trade.getTradeTimestamp();
         double price = trade.getTradePrice();
 
@@ -85,14 +88,15 @@ public class PriceMoveDetector extends KeyedProcessFunction<String, CryptoTrade,
         }
 
         String direction = changePercent > 0 ? UP : DOWN;
-        if (shouldEmit(direction, price, now)) {
+        if (shouldEmit(direction, price, now, thresholdPercent, cooldownMillis)) {
             out.collect(DetectionEvent.priceMove(trade, reference, changePercent, windowSeconds));
             lastEmitted.put(direction, now);
             lastEmittedPrice.put(direction, price);
         }
     }
 
-    private boolean shouldEmit(String direction, double price, long now) throws Exception {
+    private boolean shouldEmit(String direction, double price, long now, double thresholdPercent,
+            long cooldownMillis) throws Exception {
         Long last = lastEmitted.get(direction);
         if (last == null || now - last >= cooldownMillis) {
             return true;

@@ -2,6 +2,8 @@ package com.crypto.flink.function;
 
 import com.crypto.flink.dto.CryptoTrade;
 import com.crypto.flink.dto.DetectionEvent;
+import com.crypto.flink.rules.DetectionRule;
+import com.crypto.flink.rules.DetectionRules;
 import org.apache.flink.api.common.state.ListState;
 import org.apache.flink.api.common.state.ListStateDescriptor;
 import org.apache.flink.api.common.state.MapState;
@@ -16,9 +18,10 @@ import java.util.List;
 
 /**
  * F2 대량 체결 감지. 종목별로 두 조건을 본다.
- * A) 한 건 금액이 singleAmount 이상
- * B) burstWindow 안에 같은 방향 체결 합이 burstAmount 이상 (A 에 걸린 체결은 빼고 센다)
+ * A) 한 건 금액이 largeSingleAmount 이상
+ * B) burstWindow 안에 같은 방향 체결 합이 largeBurstAmount 이상 (A 에 걸린 체결은 빼고 센다)
  * 같은 종목·같은 조건·같은 방향은 cooldown 동안 다시 내지 않는다. 시간은 모두 체결 시각 기준이다.
+ * 임계치는 종목별 규칙에서 읽는다.
  */
 public class LargeTradeDetector extends KeyedProcessFunction<String, CryptoTrade, DetectionEvent> {
 
@@ -36,20 +39,16 @@ public class LargeTradeDetector extends KeyedProcessFunction<String, CryptoTrade
         }
     }
 
-    private final double singleAmount;
-    private final double burstAmount;
+    private final DetectionRules rules;
     private final int burstWindowSeconds;
-    private final long cooldownMillis;
 
     private transient ListState<AmountAt> bidBurst;
     private transient ListState<AmountAt> askBurst;
     private transient MapState<String, Long> lastEmitted;
 
-    public LargeTradeDetector(double singleAmount, double burstAmount, int burstWindowSeconds, int cooldownSeconds) {
-        this.singleAmount = singleAmount;
-        this.burstAmount = burstAmount;
+    public LargeTradeDetector(DetectionRules rules, int burstWindowSeconds) {
+        this.rules = rules;
         this.burstWindowSeconds = burstWindowSeconds;
-        this.cooldownMillis = cooldownSeconds * 1000L;
     }
 
     @Override
@@ -61,11 +60,13 @@ public class LargeTradeDetector extends KeyedProcessFunction<String, CryptoTrade
 
     @Override
     public void processElement(CryptoTrade trade, Context ctx, Collector<DetectionEvent> out) throws Exception {
+        DetectionRule rule = rules.resolve(trade.getCode());
+        long cooldownMillis = rule.getLargeCooldownSeconds() * 1000L;
         long now = trade.getTradeTimestamp();
         double amount = trade.getTradeAmount();
 
-        if (amount >= singleAmount) {
-            if (cooldownPassed(DetectionEvent.LARGE_TRADE, trade.getAskBid(), now)) {
+        if (amount >= rule.getLargeSingleAmount()) {
+            if (cooldownPassed(DetectionEvent.LARGE_TRADE, trade.getAskBid(), now, cooldownMillis)) {
                 out.collect(DetectionEvent.largeTrade(trade));
             }
             // 단일 조건에 걸린 체결까지 합치면 집중 체결이 늘 같이 나와 이중 이벤트가 된다
@@ -86,12 +87,13 @@ public class LargeTradeDetector extends KeyedProcessFunction<String, CryptoTrade
         sum += amount;
         burst.update(kept);
 
-        if (sum >= burstAmount && cooldownPassed(DetectionEvent.LARGE_TRADE_BURST, trade.getAskBid(), now)) {
+        if (sum >= rule.getLargeBurstAmount()
+                && cooldownPassed(DetectionEvent.LARGE_TRADE_BURST, trade.getAskBid(), now, cooldownMillis)) {
             out.collect(DetectionEvent.largeTradeBurst(trade, sum, kept.size(), burstWindowSeconds));
         }
     }
 
-    private boolean cooldownPassed(String type, String side, long now) throws Exception {
+    private boolean cooldownPassed(String type, String side, long now, long cooldownMillis) throws Exception {
         String key = type + ":" + side;
         Long last = lastEmitted.get(key);
         if (last != null && now - last < cooldownMillis) {

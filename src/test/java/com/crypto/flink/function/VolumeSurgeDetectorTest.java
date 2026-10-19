@@ -2,6 +2,7 @@ package com.crypto.flink.function;
 
 import com.crypto.flink.dto.DetectionEvent;
 import com.crypto.flink.dto.TradeIntensity;
+import com.crypto.flink.rules.TestRules;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.ProcessFunctionTestHarnesses;
@@ -81,7 +82,7 @@ class VolumeSurgeDetectorTest {
     private void open(List<Double> seed) throws Exception {
         BaselineSource source = (code, bucketSeconds, limit) -> seed;
         harness = ProcessFunctionTestHarnesses.forKeyedProcessFunction(
-                new VolumeSurgeDetector(300, 288, 12, 5.0, 300, source), TradeIntensity::getCode, Types.STRING);
+                new VolumeSurgeDetector(300, 288, 12, TestRules.defaults(), source), TradeIntensity::getCode, Types.STRING);
     }
 
     private void feed(String code, long windowEnd, double totalAmount) throws Exception {

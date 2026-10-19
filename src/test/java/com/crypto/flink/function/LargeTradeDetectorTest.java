@@ -2,6 +2,7 @@ package com.crypto.flink.function;
 
 import com.crypto.flink.dto.CryptoTrade;
 import com.crypto.flink.dto.DetectionEvent;
+import com.crypto.flink.rules.TestRules;
 import org.apache.flink.api.common.typeinfo.Types;
 import org.apache.flink.streaming.util.KeyedOneInputStreamOperatorTestHarness;
 import org.apache.flink.streaming.util.ProcessFunctionTestHarnesses;
@@ -24,7 +25,7 @@ class LargeTradeDetectorTest {
     @BeforeEach
     void setUp() throws Exception {
         harness = ProcessFunctionTestHarnesses.forKeyedProcessFunction(
-                new LargeTradeDetector(3 * EOK, 3 * EOK, 10, 60), CryptoTrade::getCode, Types.STRING);
+                new LargeTradeDetector(TestRules.defaults(), 10), CryptoTrade::getCode, Types.STRING);
     }
 
     @AfterEach
