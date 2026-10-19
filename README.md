@@ -93,6 +93,7 @@ docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-n
 docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-metrics --replication-factor 1 --partitions 1
 docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-events --replication-factor 1 --partitions 1
 docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-trades-dlq --replication-factor 1 --partitions 1
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-orderbook --replication-factor 1 --partitions 1
 ```
 
 ### 3. 데이터 프로듀서 환경 설정
@@ -284,6 +285,18 @@ premium:
   cooldown-seconds: 1800
 ```
 
+### 2-2. 호가 쏠림 (OrderbookService)
+
+producer가 업비트 `orderbook`도 같은 연결로 구독해 `crypto-orderbook` 토픽에 넣는다. Spring이 이 토픽을 최신 위치부터 읽어 종목별로 총 매수 잔량 ÷ 총 매도 잔량(`ratio`), 최우선 5호가의 매수·매도 금액, 스프레드를 유지하고 `GET /api/orderbook`과 대시보드에 보여준다. 비율이 3 이상(매수벽) 또는 1/3 이하(매도벽)인 상태가 10초 넘게 끊기지 않으면 `ORDERBOOK_IMBALANCE` 이벤트를 남긴다(종목·방향별 10분 간격). 호가는 초당 여러 번 바뀌어 순간값으로 내면 노이즈뿐이라 지속 시간을 본다.
+
+```yaml
+orderbook:
+  top-levels: 5
+  threshold-ratio: 3.0
+  hold-seconds: 10
+  cooldown-seconds: 600
+```
+
 ### 3. 조회 API (ResultConsumer → MetricsStore · PostgreSQL)
 
 Spring이 `crypto-metrics`와 `crypto-events`를 소비해 체결강도는 메모리에 최신 값만, 감지 이벤트는 PostgreSQL `detection_event` 테이블에 담는다. API는 Flink 상태를 직접 읽지 않고 이 저장소만 본다. 같은 이벤트가 다시 와도 `(type, code, event_time)` 고유 제약으로 한 번만 남는다.
@@ -293,6 +306,7 @@ GET /api/intensity?window=300&sort=netAmount   # 구간별 전 종목 체결강�
 GET /api/intensity/{code}                      # 한 종목의 모든 구간. 지표가 아직 없으면 404
 GET /api/events?code=&type=&since=&limit=50    # 감지 이벤트 최신순. since: ISO-8601 또는 epoch ms (기본 최근 24시간)
 GET /api/premium                               # 종목별 김치 프리미엄 최신 값
+GET /api/orderbook                             # 종목별 호가 쏠림 최신 스냅샷
 ```
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html
@@ -353,6 +367,7 @@ kafka:
   dead-letter-topic: crypto-trades-dlq # 파싱 실패 원본
   metrics-topic: crypto-metrics # 체결강도 지표
   events-topic: crypto-events # 감지 이벤트
+  orderbook-topic: crypto-orderbook # 호가 원본 (producer.py, Spring 이 직접 소비)
   group-id: crypto-flink-group
 ```
 

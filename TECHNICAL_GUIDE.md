@@ -41,6 +41,7 @@
 | `store` | 조회용 저장소 | `MetricsStore`(메모리), `DetectionEventRepository`(JDBC) |
 | `stream` | SSE 연결 관리 | `StreamBroadcaster` |
 | `premium` | 김치 프리미엄 (Flink 밖, Spring 스케줄) | `BinancePriceFeed`, `ExchangeRateFeed`, `UpbitLastPriceStore`, `KimchiPremiumService` |
+| `orderbook` | 호가 쏠림 (Flink 밖, 호가 토픽 소비) | `Orderbook`, `OrderbookImbalance`, `ImbalanceDetector`, `OrderbookService` |
 | `controller` | REST·SSE 엔드포인트 | `IntensityController`, `EventsController`, `RulesController`, `StreamController` |
 | `util` | 한국 시간 포맷 | `KstTime` |
 
@@ -68,6 +69,7 @@
 | `crypto-metrics` | `TradeIntensity` JSON. 종목·구간(60/300/900초)별 | 5초마다 종목×구간 | `latest` (옛 지표는 쓸모 없음) |
 | `crypto-events` | `DetectionEvent` JSON. `type` 으로 구분 | 조건 충족 시 | `earliest` (이력, 고유 제약으로 중복 제거) |
 | `crypto-trades-dlq` | 파싱 실패 원본 문자열 | 실패 시 | 소비자 없음. Kafka UI 로 본다 |
+| `crypto-orderbook` | 업비트 orderbook 원본 (producer 가 넣음) | 호가 변경마다 | `latest` (Spring `OrderbookService` 가 직접 읽음, Flink 는 안 읽음) |
 
 `DetectionEvent`는 종류에 없는 필드를 null 로 두고 JSON에서 뺀다. 종류별 필드는 README의 감지 이벤트 절에 있다.
 
@@ -123,6 +125,10 @@
 ### 5.1 김치 프리미엄 (Flink 밖)
 
 업비트 마지막 체결가(`UpbitLastPriceStore`, 원본 토픽을 latest 부터 읽음), 바이낸스 USDT 최신가(`BinancePriceFeed`, Java 11 `HttpClient` WebSocket 으로 miniTicker 구독, 끊기면 백오프 재접속), 환율(`ExchangeRateFeed`, 10분마다 두나무 → er-api)을 `KimchiPremiumService`가 5초마다 합친다. 셋 다 느리게 바뀌는 값의 결합이라 스트림 조인이 필요 없다. 한쪽이 2분 넘게 멈추면 그 종목은 건너뛴다. 멈춘 가격으로 계산하면 괴리율이 거짓으로 커지기 때문이다. 임계치 초과는 `KIMCHI_PREMIUM` 이벤트로 저장소에 직접 넣고 SSE 로 전파한다(Kafka events 토픽은 거치지 않는다).
+
+### 5.2 호가 쏠림 (Flink 밖)
+
+`OrderbookService`가 `crypto-orderbook`을 latest 부터 읽어 종목별 `OrderbookImbalance`(총 매수÷매도 잔량, 상위 N호가 금액, 스프레드)를 유지한다. 호가는 상태 스냅샷이라 윈도우 집계가 필요 없다. 대시보드에는 종목당 1초에 한 번만 보낸다. `ImbalanceDetector`는 쏠림이 `hold-seconds` 동안 끊기지 않고 이어졌을 때 한 번 `ORDERBOOK_IMBALANCE`를 내고 종목·방향별 쿨다운을 둔다. 순간값은 노이즈라서다. 상태는 메모리뿐이고 Kafka 리스너 스레드 하나에서만 쓰므로 동기화하지 않는다.
 
 ## 6. 감지 규칙과 Job 재시작
 

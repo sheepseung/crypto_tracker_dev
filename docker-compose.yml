@@ -39,7 +39,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
-        for t in crypto-trades crypto-trades-dlq crypto-metrics crypto-events; do
+        for t in crypto-trades crypto-trades-dlq crypto-metrics crypto-events crypto-orderbook; do
           kafka-topics --bootstrap-server kafka:29092 --create --if-not-exists --topic $$t --replication-factor 1 --partitions 1
         done
 
@@ -107,6 +107,7 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:29092
       KAFKA_TOPIC: crypto-trades
+      KAFKA_ORDERBOOK_TOPIC: crypto-orderbook
       UPBIT_MARKETS: KRW-BTC,KRW-ETH,KRW-DOGE
 
 volumes:

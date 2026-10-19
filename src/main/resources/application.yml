@@ -33,6 +33,7 @@ kafka:
   dead-letter-topic: crypto-trades-dlq
   metrics-topic: crypto-metrics
   events-topic: crypto-events
+  orderbook-topic: crypto-orderbook # producer 가 넣는 호가 원본. Spring 이 직접 읽는다
   group-id: crypto-flink-group # Flink 소스
   api-group-id: crypto-api # 결과 토픽을 읽는 Spring 소비자
 
@@ -82,6 +83,13 @@ premium:
   fx-refresh-seconds: 600 # 환율 갱신 주기 (두나무 → 실패 시 open.er-api.com)
   threshold-percent: 5.0 # 괴리율 절댓값이 이 이상이면 KIMCHI_PREMIUM 이벤트
   cooldown-seconds: 1800 # 같은 종목 재감지 간격 (30분)
+
+# 호가 불균형 (Spring 에서 호가 토픽을 직접 읽어 계산)
+orderbook:
+  top-levels: 5 # 금액을 합칠 최우선 호가 개수
+  threshold-ratio: 3.0 # 매수÷매도 잔량이 이 이상이면 매수벽, 1/이 값 이하면 매도벽
+  hold-seconds: 10 # 쏠림이 이만큼 이어져야 이벤트
+  cooldown-seconds: 600 # 같은 종목·방향 재감지 간격
 
 # 로깅 설정
 logging:

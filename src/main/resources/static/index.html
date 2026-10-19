@@ -40,6 +40,7 @@
   .badge.PRICE_DROP { border-color: var(--sell); color: var(--sell); }
   .badge.VOLUME_SURGE { border-color: #a78bfa; color: #a78bfa; }
   .badge.KIMCHI_PREMIUM { border-color: #34d399; color: #34d399; }
+  .badge.ORDERBOOK_IMBALANCE { border-color: #fb923c; color: #fb923c; }
   .empty { color: var(--muted); padding: 16px 0; text-align: center; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
 </style>
@@ -70,6 +71,14 @@
       <tbody id="premiums"><tr><td colspan="5" class="empty">환율과 바이낸스 시세를 기다리는 중</td></tr></tbody>
     </table>
     <p class="muted">프리미엄 = 업비트가 ÷ (바이낸스 USDT가 × USD/KRW) − 1. 5초마다 갱신.</p>
+  </section>
+  <section>
+    <h2>호가 쏠림 <span class="muted">매수 ÷ 매도 잔량</span></h2>
+    <table>
+      <thead><tr><th>종목</th><th>비율</th><th>상위 5호가 매수</th><th>상위 5호가 매도</th><th>스프레드</th></tr></thead>
+      <tbody id="orderbooks"><tr><td colspan="5" class="empty">호가를 기다리는 중</td></tr></tbody>
+    </table>
+    <p class="muted">1보다 크면 매수벽. 3배 이상 쏠림이 10초 이어지면 이벤트.</p>
   </section>
 </main>
 <script>
@@ -137,6 +146,22 @@
     document.getElementById('fx').textContent = `USD/KRW ${any.usdKrw.toLocaleString()} (${any.fxSource})`;
   }
 
+  const orderbooks = new Map();  // key: code
+
+  function renderOrderbooks() {
+    const rows = [...orderbooks.values()].sort((a, b) => a.code.localeCompare(b.code));
+    const body = document.getElementById('orderbooks');
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="empty">호가를 기다리는 중</td></tr>'; return; }
+    body.innerHTML = rows.map(o => `
+      <tr>
+        <td class="code">${o.code.replace('KRW-', '')}</td>
+        <td class="${o.ratio >= 1 ? 'buy' : 'sell'}">${o.ratio.toFixed(2)}<div class="bar"><i style="width:${Math.min(100, o.ratio / (1 + o.ratio) * 100)}%"></i></div></td>
+        <td class="buy">${fmtKrw(o.topBidAmount)}</td>
+        <td class="sell">${fmtKrw(o.topAskAmount)}</td>
+        <td class="muted">${o.spreadPercent.toFixed(3)}%</td>
+      </tr>`).join('');
+  }
+
   function eventItem(e) {
     const li = document.createElement('li');
     li.innerHTML = `<div class="when">${e.eventTimeAt ? e.eventTimeAt.slice(0, 19).replace('T', ' ') : ''}</div>
@@ -173,7 +198,11 @@
       premiums.clear();
       (s.premiums || []).forEach(p => premiums.set(p.code, p));
       renderPremiums();
+      orderbooks.clear();
+      (s.orderbooks || []).forEach(o => orderbooks.set(o.code, o));
+      renderOrderbooks();
     });
+    es.addEventListener('orderbook', ev => { const o = JSON.parse(ev.data); orderbooks.set(o.code, o); renderOrderbooks(); });
     es.addEventListener('metric', ev => { putMetric(JSON.parse(ev.data)); renderRows(); });
     es.addEventListener('premium', ev => { const p = JSON.parse(ev.data); premiums.set(p.code, p); renderPremiums(); });
     es.addEventListener('event', ev => prependEvent(JSON.parse(ev.data)));

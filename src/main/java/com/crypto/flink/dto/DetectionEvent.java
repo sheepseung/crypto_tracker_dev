@@ -16,6 +16,7 @@ public class DetectionEvent {
     public static final String PRICE_DROP = "PRICE_DROP";
     public static final String VOLUME_SURGE = "VOLUME_SURGE";
     public static final String KIMCHI_PREMIUM = "KIMCHI_PREMIUM";
+    public static final String ORDERBOOK_IMBALANCE = "ORDERBOOK_IMBALANCE";
 
     private String type;
     private String code;
@@ -99,6 +100,22 @@ public class DetectionEvent {
         event.message = String.format("%s 김치 프리미엄 %s%.2f%% (업비트 %s / 바이낸스 %s, 환율 %,.0f)",
                 premium.code(), premium.premiumPercent() > 0 ? "+" : "", premium.premiumPercent(),
                 Krw.format(premium.upbitPrice()), Krw.format(premium.globalPriceKrw()), premium.usdKrw());
+        return event;
+    }
+
+    /** 호가 쏠림: side 는 두꺼운 쪽, ratio 는 매수÷매도 잔량, amount 는 그쪽 상위 호가 금액(KRW). */
+    public static DetectionEvent orderbookImbalance(com.crypto.flink.orderbook.OrderbookImbalance snapshot,
+            String side, int heldSeconds) {
+        boolean bidWall = CryptoTrade.BID.equals(side);
+        DetectionEvent event = base(ORDERBOOK_IMBALANCE, snapshot.code(), snapshot.timestamp());
+        event.side = side;
+        event.ratio = snapshot.ratio();
+        event.amount = bidWall ? snapshot.topBidAmount() : snapshot.topAskAmount();
+        event.price = bidWall ? snapshot.bestBid() : snapshot.bestAsk();
+        event.windowSeconds = heldSeconds;
+        event.message = String.format("%s %s벽 %d초 지속: 매수÷매도 잔량 %.2f, 상위 %d호가 %s",
+                snapshot.code(), bidWall ? "매수" : "매도", heldSeconds, snapshot.ratio(), snapshot.topLevels(),
+                Krw.format(event.amount));
         return event;
     }
 
