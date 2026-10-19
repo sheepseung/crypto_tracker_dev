@@ -123,12 +123,12 @@ orderbook:
   threshold-ratio: 3.0 # 매수÷매도 잔량이 이 이상이면 매수벽, 1/이 값 이하면 매도벽
   hold-seconds: 10 # 쏠림이 이만큼 이어져야 이벤트
   cooldown-seconds: 600 # 같은 종목·방향 재감지 간격
-  wall: # 호가 벽 추적 (G3)
-    min-amount: 50000000 # 한 호가 잔량 금액이 이 이상 (5천만 원)
-    ratio: 5.0 # 같은 쪽 다른 호가 평균의 몇 배 이상이면 벽
-    min-lifetime-seconds: 30 # 이보다 짧게 살다 간 벽은 노이즈로 본다
+  wall: # 호가 벽 추적 (G3). 첫 기준(5천만·5배·30초·5분)은 시간당 수십 건이 떠서 조였다
+    min-amount: 100000000 # 한 호가 잔량 금액이 이 이상 (1억 원)
+    ratio: 8.0 # 같은 쪽 다른 호가 평균의 몇 배 이상이면 벽
+    min-lifetime-seconds: 60 # 이보다 짧게 살다 간 벽은 노이즈로 본다
     gone-ratio: 0.2 # 잔량이 최대치의 이 비율 아래로 떨어지면 사라진 것
-    cooldown-seconds: 300 # 같은 종목·종류·방향 재감지 간격
+    cooldown-seconds: 900 # 같은 종목·종류·방향 재감지 간격 (15분)
 
 # 로깅 설정
 logging:
