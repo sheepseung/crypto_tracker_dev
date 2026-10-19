@@ -14,6 +14,7 @@ public class DetectionEvent {
     public static final String LARGE_TRADE_BURST = "LARGE_TRADE_BURST";
     public static final String PRICE_SURGE = "PRICE_SURGE";
     public static final String PRICE_DROP = "PRICE_DROP";
+    public static final String VOLUME_SURGE = "VOLUME_SURGE";
 
     private String type;
     private String code;
@@ -27,6 +28,8 @@ public class DetectionEvent {
     private Double priceFrom;
     private Double priceTo;
     private Double changePercent;
+    private Double baselineAmount;
+    private Double ratio;
     private String message;
 
     public DetectionEvent() {
@@ -68,6 +71,19 @@ public class DetectionEvent {
         event.message = String.format("%s %d분 내 %s%.2f%% (%s → %s)",
                 trade.getCode(), windowSeconds / 60, up ? "+" : "", changePercent,
                 Krw.format(priceFrom), Krw.format(trade.getTradePrice()));
+        return event;
+    }
+
+    public static DetectionEvent volumeSurge(TradeIntensity window, double baselineAmount, int baselineHours) {
+        DetectionEvent event = base(VOLUME_SURGE, window.getCode(), window.getLastTradeTimestamp());
+        event.amount = window.getTotalAmount();
+        event.tradeCount = window.getTradeCount();
+        event.windowSeconds = window.getWindowSeconds();
+        event.baselineAmount = baselineAmount;
+        event.ratio = window.getTotalAmount() / baselineAmount;
+        event.message = String.format("%s %d분 거래대금 %s, %d시간 평균(%s)의 %.1f배",
+                window.getCode(), window.getWindowSeconds() / 60, Krw.format(window.getTotalAmount()),
+                baselineHours, Krw.format(baselineAmount), event.ratio);
         return event;
     }
 
@@ -178,6 +194,22 @@ public class DetectionEvent {
 
     public void setChangePercent(Double changePercent) {
         this.changePercent = changePercent;
+    }
+
+    public Double getBaselineAmount() {
+        return baselineAmount;
+    }
+
+    public void setBaselineAmount(Double baselineAmount) {
+        this.baselineAmount = baselineAmount;
+    }
+
+    public Double getRatio() {
+        return ratio;
+    }
+
+    public void setRatio(Double ratio) {
+        this.ratio = ratio;
     }
 
     public String getMessage() {

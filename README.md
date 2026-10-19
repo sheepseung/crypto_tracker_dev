@@ -235,6 +235,7 @@ trade:
 | `LARGE_TRADE` | 한 건 체결 금액 ≥ 3억 원 | 같은 종목·방향 60초 |
 | `LARGE_TRADE_BURST` | 10초 안에 같은 방향 체결 합 ≥ 3억 원 (단일 조건에 걸린 체결은 제외) | 같은 종목·방향 60초 |
 | `PRICE_SURGE` / `PRICE_DROP` | 5분 구간의 가장 오래된 체결가 대비 ±2% | 같은 종목·방향 5분. 직전 이벤트 가격에서 2% 더 움직이면 그 전에도 낸다 |
+| `VOLUME_SURGE` | 5분 거래대금이 직전 24시간 5분 버킷 평균의 5배 이상. 기준선은 기동 직후 업비트 5분봉 200개로 채우고 이후 스트림으로 갱신. 버킷이 12개(1시간) 미만이면 판정하지 않음 | 같은 종목 5분 |
 
 ```yaml
 detection:
@@ -247,6 +248,13 @@ detection:
     window-seconds: 300
     threshold-percent: 2.0
     cooldown-seconds: 300
+  volume-surge:
+    window-seconds: 300
+    baseline-hours: 24
+    min-baseline-buckets: 12
+    multiplier: 5.0
+    cooldown-seconds: 300
+    seed-from-upbit: true
 ```
 
 ```json

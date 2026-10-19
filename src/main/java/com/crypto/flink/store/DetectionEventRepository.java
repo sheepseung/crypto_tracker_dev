@@ -31,13 +31,13 @@ public class DetectionEventRepository {
             jdbc.update("""
                     INSERT INTO detection_event
                       (type, code, event_time, event_time_at, side, amount, price, trade_count,
-                       window_seconds, price_from, price_to, change_percent, message)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       window_seconds, price_from, price_to, change_percent, baseline_amount, ratio, message)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     event.getType(), event.getCode(), event.getEventTime(), event.getEventTimeAt(),
                     event.getSide(), event.getAmount(), event.getPrice(), event.getTradeCount(),
                     event.getWindowSeconds(), event.getPriceFrom(), event.getPriceTo(), event.getChangePercent(),
-                    event.getMessage());
+                    event.getBaselineAmount(), event.getRatio(), event.getMessage());
             return true;
         } catch (DuplicateKeyException e) {
             return false;
@@ -79,6 +79,8 @@ public class DetectionEventRepository {
         event.setPriceFrom(nullableDouble(rs, "price_from"));
         event.setPriceTo(nullableDouble(rs, "price_to"));
         event.setChangePercent(nullableDouble(rs, "change_percent"));
+        event.setBaselineAmount(nullableDouble(rs, "baseline_amount"));
+        event.setRatio(nullableDouble(rs, "ratio"));
         event.setMessage(rs.getString("message"));
         return event;
     }

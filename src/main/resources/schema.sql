@@ -16,5 +16,8 @@ CREATE TABLE IF NOT EXISTS detection_event (
     CONSTRAINT uq_detection_event UNIQUE (type, code, event_time)
 );
 
+ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS baseline_amount DOUBLE PRECISION;
+ALTER TABLE detection_event ADD COLUMN IF NOT EXISTS ratio DOUBLE PRECISION;
+
 CREATE INDEX IF NOT EXISTS idx_detection_event_code_time ON detection_event (code, event_time DESC);
 CREATE INDEX IF NOT EXISTS idx_detection_event_type_time ON detection_event (type, event_time DESC);

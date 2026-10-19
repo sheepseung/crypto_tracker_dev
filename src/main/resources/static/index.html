@@ -38,6 +38,7 @@
   .badge.LARGE_TRADE, .badge.LARGE_TRADE_BURST { border-color: var(--accent); color: var(--accent); }
   .badge.PRICE_SURGE { border-color: var(--buy); color: var(--buy); }
   .badge.PRICE_DROP { border-color: var(--sell); color: var(--sell); }
+  .badge.VOLUME_SURGE { border-color: #a78bfa; color: #a78bfa; }
   .empty { color: var(--muted); padding: 16px 0; text-align: center; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
 </style>
@@ -58,7 +59,7 @@
     <p class="muted">체결강도 = 매수 금액 ÷ 매도 금액 × 100. 100보다 크면 매수 우위. 5초마다 갱신.</p>
   </section>
   <section>
-    <h2>감지 이벤트 <span class="muted">대량 체결 · 급등락</span></h2>
+    <h2>감지 이벤트 <span class="muted">대량 체결 · 급등락 · 거래량 급증</span></h2>
     <ul id="events"><li class="empty">아직 이벤트가 없습니다</li></ul>
   </section>
 </main>

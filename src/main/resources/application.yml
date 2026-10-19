@@ -56,6 +56,14 @@ detection:
     window-seconds: 300 # 변동률 기준 구간 (5분)
     threshold-percent: 2.0 # 급등·급락 임계치 (±2%)
     cooldown-seconds: 300 # 같은 방향 재감지 간격. 임계치만큼 더 움직이면 그 전에도 낸다
+  volume-surge:
+    window-seconds: 300 # 거래대금을 보는 구간 (5분)
+    slide-seconds: 5 # 판정 주기
+    baseline-hours: 24 # 기준선으로 삼는 과거 길이
+    min-baseline-buckets: 12 # 기준선 버킷이 이보다 적으면 판정하지 않음 (1시간어치)
+    multiplier: 5.0 # 기준선 평균의 몇 배부터 급증으로 볼지
+    cooldown-seconds: 300 # 같은 종목 재감지 간격
+    seed-from-upbit: true # 기동 직후 업비트 5분봉으로 기준선을 채울지
 
 # 체결강도 설정
 trade:
