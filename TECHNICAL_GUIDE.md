@@ -1,794 +1,188 @@
-# 🔧 Crypto Tracker 기술 구현 가이드
+# Crypto Tracker 기술 가이드
 
-## 📋 목차
+이 문서는 코드를 고치거나 기능을 더할 사람을 위한 구조 설명이다. 실행 방법과 API 목록은 `README.md`에 있다.
 
-- [시스템 아키텍처 개요](#시스템-아키텍처-개요)
-- [데이터 수집 구현](#데이터-수집-구현)
-- [Kafka 연동 구현](#kafka-연동-구현)
-- [Flink 스트리밍 처리](#flink-스트리밍-처리)
-- [데이터 집계 및 윈도우 처리](#데이터-집계-및-윈도우-처리)
-- [분석 알고리즘 구현](#분석-알고리즘-구현)
-- [성능 최적화](#성능-최적화)
+## 1. 한눈에 보는 구조
 
-## 🏗 시스템 아키텍처 개요
-
-### 전체 데이터 플로우
-
-```mermaid
-graph TD
-    A[Upbit WebSocket API] --> B[Python Producer]
-    B --> C[Kafka Topic: crypto-trades]
-    C --> D[Flink KafkaSource]
-    D --> E[JSON Deserialization]
-    E --> F[Stream Processing]
-    F --> G[Windowing & Aggregation]
-    G --> H[Analysis Logic]
-    H --> I[Result Serialization]
-    I --> J[Kafka Topic: crypto-analysis]
-    J --> K[Consumer Applications]
-
-    F --> L[Raw Logging]
-    L --> M[Console Output]
-
-    N[Spring Boot Web Server] --> O[REST API Controllers]
-    O --> P[Swagger UI]
-    Q[Health Check] --> R[Actuator Endpoints]
+```
+업비트 WebSocket ──producer.py──▶ Kafka crypto-trades
+      (trade, 3종목)                     │
+                                         ▼  FlinkJobRunner (Spring Boot 안 로컬 Flink)
+                              파싱·검증 ──┬──▶ dlq
+                              이벤트 시간  │
+                     ┌───────────────────┴───────────────────┐
+                     ▼                                       ▼
+         TradeIntensityService                       DetectionService
+         1·5·15분 슬라이딩 집계                    대량 체결 / 급등락 / 거래량 급증
+                     │                                       │
+                     ▼                                       ▼
+             Kafka crypto-metrics                    Kafka crypto-events
+                     │                                       │
+                     └──────────▶ ResultConsumer ◀───────────┘
+                                  │            │
+                        MetricsStore(메모리)   PostgreSQL detection_event
+                                  │            │
+                     REST /api/intensity · /api/events · /api/rules · SSE /api/stream · index.html
 ```
 
-### 핵심 컴포넌트
+프로세스는 둘이다. `scripts/producer.py`(Python)와 Spring Boot 애플리케이션. Flink는 별도 클러스터 없이 Spring Boot 프로세스 안에서 로컬 미니 클러스터로 돈다. Kafka와 PostgreSQL은 `docker-compose.yml`로 띄운다.
 
-1. **데이터 수집 계층**: Python WebSocket Producer
-2. **메시지 큐 계층**: Apache Kafka
-3. **스트리밍 처리 계층**: Apache Flink
-4. **애플리케이션 계층**: Spring Boot + REST API
-5. **API 문서화**: Swagger UI + OpenAPI 3.0
-6. **모니터링**: Spring Boot Actuator
+## 2. 패키지 지도
 
-## 📊 데이터 수집 구현
+| 패키지 | 역할 | 주요 클래스 |
+| --- | --- | --- |
+| `config` | Kafka 소스·싱크 빈, Flink 실행 환경(prototype), Swagger | `FlinkJobConfig`, `SwaggerConfig` |
+| `job` | 파이프라인 계약과 Job 실행·재시작 | `FlinkPipeline`, `FlinkJobRunner` |
+| `service` | 파이프라인 구현 (Flink 연산을 붙이는 쪽) | `TradeIntensityService`, `DetectionService` |
+| `function` | Flink 함수 (파싱, 집계, 감지기, 기준선 조회) | `TradeJsonParser`, `TradeAmountAggregator`, `IntensityWindowFunction`, `LargeTradeDetector`, `PriceMoveDetector`, `VolumeSurgeDetector`, `UpbitCandleBaselineSource`, `ToJsonMapper` |
+| `dto` | 스트림을 타는 POJO | `CryptoTrade`, `TradeIntensity`, `DetectionEvent` |
+| `rules` | 감지 임계치 규칙 (DB) | `DetectionRule`, `DetectionRules`, `DetectionRuleService`, `DetectionRuleRepository` |
+| `consumer` | 결과 토픽을 읽어 저장소에 넣음 | `ResultConsumer` |
+| `store` | 조회용 저장소 | `MetricsStore`(메모리), `DetectionEventRepository`(JDBC) |
+| `stream` | SSE 연결 관리 | `StreamBroadcaster` |
+| `controller` | REST·SSE 엔드포인트 | `IntensityController`, `EventsController`, `RulesController`, `StreamController` |
+| `util` | 한국 시간 포맷 | `KstTime` |
 
-### 1. Upbit WebSocket 연결
+경계 규칙 하나: **API 계층은 Flink 상태를 직접 읽지 않는다.** Flink는 Kafka에만 쓰고, Spring은 Kafka에서만 읽는다. 그래서 Job을 다시 띄워도 API는 그대로 살아 있다.
 
-```python
-# scripts/producer.py
-import asyncio
-import json
-import websockets
-from kafka import KafkaProducer
+## 3. 데이터 계약
 
-# WebSocket 연결 설정
-uri = "wss://api.upbit.com/websocket/v1"
-subscribe_fmt = [
-    {"ticket": str(uuid.uuid4())},
-    {
-        "type": "ticker",
-        "codes": ["KRW-BTC"]
-    }
-]
+### 3.1 입력: 업비트 trade 메시지
+
+`producer.py`가 받은 바이트를 그대로 `crypto-trades`에 넣는다. 키는 종목 코드라 같은 종목은 한 파티션에 순서대로 쌓인다. `CryptoTrade`가 읽는 필드:
+
+| 필드 | 뜻 | 쓰임 |
+| --- | --- | --- |
+| `code` | 종목 (`KRW-BTC`) | 모든 keyBy 의 키 |
+| `ask_bid` | `BID` 매수 체결, `ASK` 매도 체결 | 매수·매도 금액 구분 |
+| `trade_price` × `trade_volume` | 체결 금액(KRW) | 모든 임계치와 지표의 단위 |
+| `trade_timestamp` | 체결 시각(ms) | 이벤트 시간. `timestamp`(발송 시각)는 쓰지 않는다 |
+
+모르는 필드는 무시한다(`@JsonIgnoreProperties(ignoreUnknown = true)`). `TradeJsonParser`가 type·code·ask_bid·가격·수량·체결 시각을 검증하고, 실패한 원본은 사이드 출력으로 빼 `crypto-trades-dlq`에 쓴다. 본류에는 null이 흐르지 않는다.
+
+### 3.2 출력 토픽
+
+| 토픽 | 내용 | 생산 주기 | 소비 시작점 |
+| --- | --- | --- | --- |
+| `crypto-metrics` | `TradeIntensity` JSON. 종목·구간(60/300/900초)별 | 5초마다 종목×구간 | `latest` (옛 지표는 쓸모 없음) |
+| `crypto-events` | `DetectionEvent` JSON. `type` 으로 구분 | 조건 충족 시 | `earliest` (이력, 고유 제약으로 중복 제거) |
+| `crypto-trades-dlq` | 파싱 실패 원본 문자열 | 실패 시 | 소비자 없음. Kafka UI 로 본다 |
+
+`DetectionEvent`는 종류에 없는 필드를 null 로 두고 JSON에서 뺀다. 종류별 필드는 README의 감지 이벤트 절에 있다.
+
+## 4. Flink Job
+
+### 4.1 실행 모델
+
+`FlinkJobRunner`가 `ApplicationRunner`로 기동 뒤 한 번 `launch()`한다.
+
+1. `StreamExecutionEnvironment`를 **새로** 받는다 (prototype 빈). 환경에는 붙인 연산이 쌓이므로 재사용하면 연산이 두 배로 붙는다.
+2. Kafka 소스 → `TradeJsonParser` → dlq 싱크 → 이벤트 시간 지정. 이 공통 스트림을 켜진 `FlinkPipeline` 모두에 넘긴다.
+3. `env.executeAsync("crypto-tracker")`. `execute()`는 Job이 끝날 때까지 돌아오지 않아 Spring 기동을 막는다.
+
+`restart()`는 `jobClient.cancel()`을 기다린 뒤 1~3을 다시 한다. 규칙 변경이 이 경로를 탄다. 종료 시 `@PreDestroy`로 취소한다.
+
+파이프라인은 `FlinkPipeline` 인터페이스(`name`, `isEnabled`, `attach(DataStream<CryptoTrade>)`)를 구현한 Spring 빈이면 자동으로 붙는다. `jobs.<name>.enabled` 플래그는 각 구현이 읽는다.
+
+### 4.2 이벤트 시간
+
+`FlinkJobRunner.withEventTime`이 `trade_timestamp`를 타임스탬프로, 2초 bounded out-of-orderness 워터마크를 쓴다. 업비트는 종목 안에서는 순서를 지키지만 종목 사이에는 조금 엇갈린다. 처리 시간 대신 이벤트 시간을 쓰는 이유는 재시작 뒤 Kafka에 쌓인 체결을 다시 읽을 때 과거 체결이 "지금"으로 몰려 가짜 급증이 나오지 않게 하려는 것이다. 파티션 유휴 30초를 두어 조용한 파티션이 워터마크를 막지 않게 한다.
+
+워터마크가 2초 뒤에 오므로 윈도우 결과와 감지 이벤트는 체결보다 최소 2초 늦다. 워터마크를 넘겨 늦게 온 체결은 윈도우에서 빠진다(allowed lateness 없음).
+
+### 4.3 체결강도 파이프라인
+
+`TradeIntensityService`는 구간마다 `SlidingEventTimeWindows(구간, 5초)`를 만들고 `TradeAmountAggregator`(증분 누적: 매수·매도 금액과 수량, 건수, 마지막 체결 시각) + `IntensityWindowFunction`(종목 코드와 실제 윈도우 시작·끝 부착)으로 집계한다. 세 구간 결과를 `union`해 하나의 싱크로 보낸다.
+
+슬라이딩 윈도우는 요소 하나를 구간÷슬라이드 개의 윈도우(15분이면 180개)에 넣지만, 증분 집계라 윈도우마다 누적기 하나만 남는다. 체결이 없는 윈도우는 결과를 내지 않으므로 소비 쪽은 `windowEnd`로 신선도를 판단해야 한다.
+
+체결강도 = 매수 ÷ 매도 × 100. 매도가 0이면 9999.99로 막는다(`TradeIntensity.MAX_INTENSITY`). 항상 0~100인 `buyRatio`도 같이 낸다.
+
+### 4.4 감지 파이프라인
+
+`DetectionService`는 `attach` 시점에 `RulesProvider.current()`로 규칙 스냅샷을 받아 감지기 생성자에 싣는다. 감지기는 체결마다 `rules.resolve(code)`로 종목 규칙을 찾는다. 세 감지기 모두 `KeyedProcessFunction`(키 = 종목)이고 상태는 다음과 같다.
+
+| 감지기 | 입력 | 상태 | 판정 |
+| --- | --- | --- | --- |
+| `LargeTradeDetector` | 체결 | 방향별 최근 10초 체결 목록, 조건·방향별 마지막 발생 시각 | 단일 ≥ `largeSingleAmount` → `LARGE_TRADE`. 단일에 안 걸린 체결의 10초 같은 방향 합 ≥ `largeBurstAmount` → `LARGE_TRADE_BURST`. 쿨다운 `largeCooldownSeconds` |
+| `PriceMoveDetector` | 체결 | 최근 5분 체결가 목록, 방향별 마지막 발생 시각·가격 | 구간 안 가장 오래된 가격 대비 ±`priceThresholdPercent` → `PRICE_SURGE`/`PRICE_DROP`. 쿨다운 중이라도 직전 이벤트 가격에서 임계치만큼 더 가면 낸다 |
+| `VolumeSurgeDetector` | 5분 슬라이딩 `TradeIntensity` | 정렬 버킷(5분 경계) 거래대금 최근 288개, 마지막 버킷 끝, 선채움 여부, 마지막 발생 시각 | 현재 5분 거래대금 ≥ 버킷 평균 × `volumeMultiplier` → `VOLUME_SURGE`. 버킷 12개 미만이면 판정 안 함 |
+
+거래량 감지는 체결강도와 같은 5분 윈도우를 **다시** 집계한다. 파이프라인끼리 스트림을 넘기지 않아야 한쪽만 끄거나 바꿔도 다른 쪽이 영향을 받지 않는다. 기준선은 종목의 첫 윈도우에서 `UpbitCandleBaselineSource`가 업비트 5분봉 200개를 REST로 가져와 채운다. 실패하면 경고만 남기고 스트림으로 쌓는다.
+
+상태는 모두 heap 에 있고 체크포인트는 메모리에 남는다. 재시작하면 상태는 사라진다. 쿨다운과 가격 이력은 몇 분 안에 다시 차고 기준선은 선채움으로 돌아오므로 받아들였다.
+
+## 5. API 계층
+
+- `ResultConsumer`: spring-kafka 리스너 둘. 지표는 `MetricsStore.put`(종목·구간별 최신 `windowEnd`만 남김) 뒤 SSE로 전파. 이벤트는 `DetectionEventRepository.save` 가 true(중복 아님)일 때만 SSE로 전파.
+- `DetectionEventRepository`: `(type, code, event_time)` 고유 제약. 중복 삽입은 `DuplicateKeyException`을 잡아 false 로 돌린다. 스키마는 `schema.sql`이 기동마다 실행(`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`).
+- `StreamBroadcaster`: `SseEmitter` 목록. 연결 직후 `StreamController`가 `snapshot`(지표 전체 + 최근 이벤트 50건)을 보내고, 이후 `metric`·`event`. 15초마다 주석 하트비트. 보내다 실패하면 목록에서 뺀다.
+- `static/index.html`: 의존성 없는 한 장. `EventSource`가 끊기면 브라우저가 재접속하고 snapshot으로 다시 채운다.
+
+## 6. 감지 규칙과 Job 재시작
+
+`detection_rule` 테이블에 기본 규칙 `*` 한 줄과 종목별 덮어쓰기가 있다. 덮어쓰기는 바꾼 값만 채우고 나머지는 null(기본값 따름). `DetectionRules.resolve(code)`가 둘을 합친다.
+
+`application.yml`의 `detection.*` 임계치는 DB에 `*`가 없을 때 `DetectionRuleService`가 한 번 심는 초깃값이다. 그 뒤로는 `/api/rules`가 진실이다. 구간 길이(10초·5분·24시간)는 윈도우 구조라 규칙이 아니라 설정 파일에 있다.
+
+규칙을 바꾸면 `DetectionRuleService`가 저장 뒤 `FlinkJobRunner.restart()`를 부른다. 러너와 규칙 서비스는 서로를 참조하므로(러너 → 파이프라인 → 규칙 서비스 → 러너) 규칙 서비스 쪽을 `@Lazy`로 받는다. Job 공백은 1~3초이고 API와 대시보드는 끊기지 않는다.
+
+Broadcast State 로 재시작 없이 반영하는 방식은 감지기 셋을 `BroadcastProcessFunction`으로 다시 써야 해서 미뤘다. 규칙 변경이 잦아지면 그때 옮긴다.
+
+## 7. 빌드·테스트
+
+로컬에 JDK 17이 없어도 Docker로 돌릴 수 있다.
+
+```bash
+# 테스트 (Gradle 캐시 볼륨을 재사용)
+docker run --rm -v "$PWD":/home/gradle/project -v crypto-tracker-gradle-cache:/home/gradle/.gradle \
+  -w /home/gradle/project gradle:8.5-jdk17 gradle test --no-daemon
+
+# Kafka·PostgreSQL 을 compose 로 띄운 뒤 앱을 같은 네트워크에서 실행
+docker compose up -d zookeeper kafka postgres
+docker run -d --name crypto-app --network crypto_tracker_dev_default -p 8082:8082 \
+  -v "$PWD":/home/gradle/project -v crypto-tracker-gradle-cache:/home/gradle/.gradle \
+  -w /home/gradle/project gradle:8.5-jdk17 gradle bootRun --no-daemon -q \
+  --args="--kafka.bootstrap-servers=kafka:29092 --spring.datasource.url=jdbc:postgresql://postgres:5432/crypto"
 ```
 
-**기술적 특징:**
-
-- **비동기 WebSocket**: `asyncio`와 `websockets` 라이브러리 사용
-- **실시간 스트리밍**: 업비트 공식 WebSocket API 활용
-- **자동 재연결**: 연결 실패 시 REST API 폴백 메커니즘
-
-### 2. 데이터 수집 로직
-
-```python
-async def connect_and_produce():
-    async with websockets.connect(uri, ssl=False) as websocket:
-        # 구독 메시지 전송
-        await websocket.send(json.dumps(subscribe_fmt))
-
-        while True:
-            # 실시간 데이터 수신
-            data_str = await websocket.recv()
-            data = json.loads(data_str)
-
-            # Kafka로 즉시 전송
-            producer.send('crypto-trades', value=data)
-```
-
-**수집되는 데이터 구조:**
-
-```json
-{
-  "type": "ticker",
-  "code": "KRW-BTC",
-  "trade_price": 151183000.0,
-  "trade_volume": 0.00013228,
-  "timestamp": 1756712240103,
-  "change": "RISE",
-  "change_rate": 0.0032050431,
-  "acc_trade_price": 162174950479.25195,
-  "acc_trade_volume": 1081.98564585
-}
-```
-
-### 3. 장애 처리 및 폴백
-
-```python
-async def fallback_to_rest_api():
-    async with aiohttp.ClientSession() as session:
-        while True:
-            url = "https://api.upbit.com/v1/ticker?markets=KRW-BTC"
-            async with session.get(url) as response:
-                data = await response.json()
-
-                # WebSocket 형식으로 데이터 변환
-                realtime_data = {
-                    "type": "ticker",
-                    "code": ticker_data.get("market"),
-                    "trade_price": ticker_data.get("trade_price"),
-                    # ... 기타 필드 매핑
-                }
-
-            await asyncio.sleep(1)  # 1초 간격 폴링
-```
-
-## 🔗 Kafka 연동 구현
-
-### 1. Kafka Producer 설정
-
-```python
-# Python Producer 설정
-producer = KafkaProducer(
-    bootstrap_servers='localhost:9092',
-    value_serializer=lambda v: json.dumps(v).encode('utf-8')
-)
-```
-
-### 2. Flink Kafka 커넥터 설정
-
-```java
-// FlinkJobConfig.java
-@Bean
-public KafkaSource<String> kafkaSource() {
-    return KafkaSource.<String>builder()
-            .setBootstrapServers(bootstrapServers)
-            .setTopics(inputTopic)  // "crypto-trades"
-            .setGroupId(groupId)    // "crypto-flink-group"
-            .setValueOnlyDeserializer(new SimpleStringSchema())
-            .build();
-}
-
-@Bean
-public KafkaSink<String> kafkaSink() {
-    return KafkaSink.<String>builder()
-            .setBootstrapServers(bootstrapServers)
-            .setRecordSerializer(KafkaRecordSerializationSchema.builder()
-                    .setTopic(outputTopic)  // "crypto-analysis"
-                    .setValueSerializationSchema(new SimpleStringSchema())
-                    .build())
-            .build();
-}
-```
-
-## 🌊 Flink 스트리밍 처리
-
-### 1. 스트림 환경 설정
-
-```java
-// FlinkJobConfig.java
-@Bean
-public StreamExecutionEnvironment streamExecutionEnvironment() {
-    StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
-
-    // 체크포인트 설정
-    env.enableCheckpointing(10000); // 10초마다
-    CheckpointConfig checkpointConfig = env.getCheckpointConfig();
-    checkpointConfig.setCheckpointTimeout(60000);
-    checkpointConfig.setMinPauseBetweenCheckpoints(5000);
-    checkpointConfig.setMaxConcurrentCheckpoints(1);
-
-    // 병렬성 설정
-    env.setParallelism(1);
-
-    return env;
-}
-```
-
-### 2. 원본 로그 스트리밍
-
-```java
-// RawLogStreamingService.java
-@PostConstruct
-public void startRawLoggerJob() {
-    DataStream<String> inputStream = env.fromSource(
-            kafkaSource,
-            WatermarkStrategy.noWatermarks(),
-            "Kafka Source - Raw Logger");
-
-    // 원본 데이터 로깅
-    inputStream
-            .map(value -> {
-                logger.info("📥 RAW: {}", value);
-                return value;
-            })
-            .name("Raw Logger");
-
-    env.execute("Raw Logger Job");
-}
-```
-
-### 3. JSON 역직렬화
-
-```java
-// JsonToCryptoTradeMapper
-public static class JsonToCryptoTradeMapper implements MapFunction<String, CryptoTrade> {
-    private static final ObjectMapper objectMapper = new ObjectMapper();
-
-    @Override
-    public CryptoTrade map(String json) throws Exception {
-        try {
-            return objectMapper.readValue(json, CryptoTrade.class);
-        } catch (Exception e) {
-            logger.error("JSON 파싱 오류: " + json, e);
-            return null;
-        }
-    }
-}
-```
-
-## 📊 데이터 집계 및 윈도우 처리
-
-### 1. 체결강도 집계 (Trade Intensity)
-
-#### 슬라이딩 윈도우 설정
-
-```java
-// TradeIntensityService.java
-DataStream<TradeIntensity> intensityStream = tradeStream
-        .keyBy(CryptoTrade::getCode)  // 암호화폐 코드별 파티셔닝
-        .window(SlidingProcessingTimeWindows.of(
-                Time.seconds(windowSizeSeconds),    // 윈도우 크기: 60초
-                Time.seconds(windowSlideSeconds)))  // 슬라이드: 5초
-        .aggregate(new TradeVolumeAggregator())
-        .name("Trade Volume Aggregation");
-```
-
-#### 거래량 집계 로직
-
-```java
-public static class TradeVolumeAggregator
-        implements AggregateFunction<CryptoTrade, Tuple3<Double, Double, Integer>, TradeIntensity> {
-
-    @Override
-    public Tuple3<Double, Double, Integer> createAccumulator() {
-        return new Tuple3<>(0.0, 0.0, 0);  // 매수량, 매도량, 건수
-    }
-
-    @Override
-    public Tuple3<Double, Double, Integer> add(CryptoTrade trade,
-            Tuple3<Double, Double, Integer> accumulator) {
-
-        Double buyVolume = accumulator.f0;
-        Double sellVolume = accumulator.f1;
-        Integer count = accumulator.f2;
-
-        // 매수/매도 구분
-        if ("RISE".equals(trade.getChange())) {
-            buyVolume += trade.getTradeVolume();
-        } else if ("FALL".equals(trade.getChange())) {
-            sellVolume += trade.getTradeVolume();
-        }
-
-        return new Tuple3<>(buyVolume, sellVolume, count + 1);
-    }
-
-    @Override
-    public TradeIntensity getResult(Tuple3<Double, Double, Integer> accumulator) {
-        Double buyVolume = accumulator.f0;
-        Double sellVolume = accumulator.f1;
-        Double totalVolume = buyVolume + sellVolume;
-
-        // 체결강도 계산: (매수량 / 매도량) * 100
-        Double intensityScore = 100.0;
-        if (sellVolume > 0) {
-            intensityScore = (buyVolume / sellVolume) * 100;
-        }
-
-        return new TradeIntensity(
-                LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                "KRW-BTC",  // 코드 정보는 윈도우 컨텍스트에서 가져와야 함
-                windowStart,
-                windowEnd,
-                windowSizeSeconds,
-                buyVolume,
-                sellVolume,
-                totalVolume,
-                intensityScore,
-                // ... 기타 필드
-        );
-    }
-}
-```
-
-### 2. 고래 감지 집계 (Whale Detection)
-
-#### 더 짧은 윈도우로 민감한 감지
-
-```java
-// WhaleDetectionService.java
-DataStream<WhaleMovement> whaleMovementStream = tradeStream
-        .keyBy(CryptoTrade::getCode)
-        .window(SlidingProcessingTimeWindows.of(
-                Time.seconds(5),    // 5초 윈도우
-                Time.seconds(1)))   // 1초마다 슬라이드
-        .aggregate(new WhaleVolumeAggregator())
-        .name("Whale Volume Aggregation");
-```
-
-#### 고래 감지 로직
-
-```java
-public static class WhaleVolumeAggregator
-        implements AggregateFunction<CryptoTrade, Tuple3<Double, Double, Integer>, WhaleMovement> {
-
-    @Override
-    public WhaleMovement getResult(Tuple3<Double, Double, Integer> accumulator) {
-        Double buyVolume = accumulator.f0;
-        Double sellVolume = accumulator.f1;
-        Double netVolume = buyVolume - sellVolume;  // 순거래량
-        Double volumeRatio = sellVolume > 0 ? buyVolume / sellVolume : 0.0;
-
-        return new WhaleMovement(
-                LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME),
-                "KRW-BTC",
-                windowStart,
-                windowEnd,
-                5,  // 윈도우 크기
-                buyVolume,
-                sellVolume,
-                netVolume,
-                volumeRatio,
-                0.5,  // 임계치
-                false,  // 분석 단계에서 결정
-                "NORMAL",
-                0.0,
-                "NO_PATTERN",
-                "LOW"
-        );
-    }
-}
-```
-
-## 🧮 분석 알고리즘 구현
-
-### 1. 체결강도 분석
-
-```java
-// IntensityAnalyzer
-public static class IntensityAnalyzer extends RichMapFunction<TradeIntensity, TradeIntensity> {
-
-    @Override
-    public TradeIntensity map(TradeIntensity intensity) throws Exception {
-
-        // 시장 심리 분석
-        String marketSentiment = determineMarketSentiment(intensity.getIntensityScore());
-        String intensityLevel = determineIntensityLevel(intensity.getIntensityScore());
-        String trendDirection = determineTrendDirection(intensity);
-        Double trendStrength = calculateTrendStrength(intensity);
-
-        // 알림 생성
-        String alertLevel = determineAlertLevel(intensity);
-        String alertMessage = generateAlertMessage(intensity, marketSentiment);
-        Boolean isAlertTriggered = shouldTriggerAlert(intensity);
-
-        // 결과 업데이트
-        intensity.setMarketSentiment(marketSentiment);
-        intensity.setIntensityLevel(intensityLevel);
-        intensity.setTrendDirection(trendDirection);
-        intensity.setTrendStrength(trendStrength);
-        intensity.setAlertLevel(alertLevel);
-        intensity.setAlertMessage(alertMessage);
-        intensity.setIsAlertTriggered(isAlertTriggered);
-
-        // 로깅
-        if (isAlertTriggered) {
-            logger.info("🚨 체결강도 알림: {} - 강도: {:.2f} - 심리: {} - 알림: {}",
-                    intensity.getCode(), intensity.getIntensityScore(),
-                    marketSentiment, alertLevel);
-        }
-
-        return intensity;
-    }
-
-    private String determineMarketSentiment(Double intensityScore) {
-        if (intensityScore >= 120) return "BULLISH";
-        if (intensityScore <= 80) return "BEARISH";
-        return "NEUTRAL";
-    }
-
-    private String determineIntensityLevel(Double intensityScore) {
-        if (intensityScore >= 150) return "VERY_HIGH";
-        if (intensityScore >= 120) return "HIGH";
-        if (intensityScore >= 90) return "MEDIUM";
-        if (intensityScore >= 60) return "LOW";
-        return "VERY_LOW";
-    }
-}
-```
-
-### 2. 고래 움직임 분석
-
-```java
-// WhaleMovementAnalyzer
-public static class WhaleMovementAnalyzer extends RichMapFunction<WhaleMovement, WhaleMovement> {
-
-    @Override
-    public WhaleMovement map(WhaleMovement movement) throws Exception {
-
-        Double netVolume = Math.abs(movement.getNetVolume());
-
-        // 임계치 기반 고래 움직임 판단
-        boolean isWhaleMovement = netVolume > 0.5; // 0.5 BTC 이상
-
-        // 움직임 유형 결정
-        String movementType = determineMovementType(movement);
-        Double confidenceScore = calculateConfidenceScore(movement);
-        String patternDetected = detectPattern(movement);
-        String alertLevel = determineAlertLevel(movement, isWhaleMovement);
-
-        // 결과 업데이트
-        movement.setIsWhaleMovement(isWhaleMovement);
-        movement.setMovementType(movementType);
-        movement.setConfidenceScore(confidenceScore);
-        movement.setPatternDetected(patternDetected);
-        movement.setAlertLevel(alertLevel);
-
-        // 고래 움직임 감지 시 로깅
-        if (isWhaleMovement) {
-            logger.info("🐋 고래 움직임 감지: {} - {} - 순거래량: {} BTC - 알림레벨: {}",
-                    movement.getCode(), movementType,
-                    String.format("%.4f", netVolume), alertLevel);
-        }
-
-        return movement;
-    }
-
-    private String determineMovementType(WhaleMovement movement) {
-        Double netVolume = movement.getNetVolume();
-
-        if (Math.abs(netVolume) < 0.1) return "BALANCED";
-        if (netVolume > 0.5) return "AGGRESSIVE_BUY";
-        if (netVolume < -0.5) return "AGGRESSIVE_SELL";
-        return "NORMAL";
-    }
-
-    private String detectPattern(WhaleMovement movement) {
-        Double netVolume = movement.getNetVolume();
-        Double totalVolume = movement.getTotalBuyVolume() + movement.getTotalSellVolume();
-
-        if (totalVolume > 2.0 && Math.abs(netVolume) > 1.0) {
-            return "MASSIVE_MOVEMENT";
-        } else if (totalVolume > 1.0 && Math.abs(netVolume) > 0.5) {
-            return "SIGNIFICANT_MOVEMENT";
-        } else if (Math.abs(netVolume) > 0.3) {
-            return "MODERATE_MOVEMENT";
-        }
-        return "NO_PATTERN";
-    }
-}
-```
-
-## 🌐 Spring Boot 웹 서버 및 API 구현
-
-### 1. 웹 서버 아키텍처
-
-```java
-// CryptoFlinkApplication.java
-@SpringBootApplication
-@EnableScheduling
-public class CryptoFlinkApplication {
-    public static void main(String[] args) {
-        SpringApplication.run(CryptoFlinkApplication.class, args);
-    }
-}
-```
-
-**핵심 특징:**
-
-- **포트 8082**: 기본 웹 서버 포트
-- **Actuator**: 헬스 체크 및 모니터링 엔드포인트
-- **Swagger UI**: API 문서화 및 테스트 인터페이스
-
-### 2. 비동기 Flink Job 실행
-
-**문제**: Flink Job의 `env.execute()`가 Spring Boot 메인 스레드를 블로킹
-**해결**: `CompletableFuture.runAsync()`를 사용하여 별도 스레드에서 실행
-
-```java
-// RawLogStreamingService.java
-@PostConstruct
-public void initRawLoggerJob() {
-    // 별도 스레드에서 Flink Job 시작
-    CompletableFuture.runAsync(() -> startRawLoggerJob());
-}
-
-public void startRawLoggerJob() {
-    try {
-        // ... Flink Job 로직
-        env.execute("Raw Logger Job");
-    } catch (Exception e) {
-        logger.error("❌ Raw Logger Job 실행 중 오류 발생: ", e);
-    }
-}
-```
-
-### 3. Swagger UI 설정
-
-```java
-// SwaggerConfig.java
-@Configuration
-public class SwaggerConfig {
-
-    @Bean
-    public OpenAPI openAPI() {
-        return new OpenAPI()
-                .info(new Info()
-                        .title("🚀 Crypto Tracker API")
-                        .description("실시간 암호화폐 분석 플랫폼 API")
-                        .version("1.0.0")
-                        .contact(new Contact()
-                                .name("Crypto Tracker Team")
-                                .email("dev@cryptotracker.com"))
-                        .license(new License()
-                                .name("MIT License")
-                                .url("https://opensource.org/licenses/MIT")))
-                .servers(List.of(
-                        new Server().url("http://localhost:8082").description("Local Development Server")
-                ));
-    }
-}
-```
-
-**접속 URL**: `http://localhost:8082/swagger-ui/index.html`
-
-### 4. REST API 컨트롤러
-
-#### 4-1. 체결강도 분석 API
-
-```java
-// TradeIntensityController.java
-@RestController
-@RequestMapping("/api/trade-intensity")
-@Tag(name = "Trade Intensity", description = "실시간 체결강도 분석 API")
-public class TradeIntensityController {
-
-    @GetMapping("/health")
-    @Operation(summary = "서비스 상태 확인", description = "체결강도 분석 서비스의 상태를 확인합니다")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "서비스 정상"),
-            @ApiResponse(responseCode = "503", description = "서비스 비정상")
-    })
-    public ResponseEntity<Map<String, Object>> getHealth() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "UP");
-        response.put("service", "Trade Intensity Analysis");
-        response.put("timestamp", LocalDateTime.now());
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/recent")
-    @Operation(summary = "최근 체결강도 조회", description = "최근 분석된 체결강도 데이터를 조회합니다")
-    public ResponseEntity<List<TradeIntensity>> getRecentIntensity(
-            @RequestParam(defaultValue = "10") int limit) {
-        // 구현 예정
-        return ResponseEntity.ok(new ArrayList<>());
-    }
-}
-```
-
-#### 4-2. 고래 감지 API
-
-```java
-// WhaleDetectionController.java
-@RestController
-@RequestMapping("/api/whale")
-@Tag(name = "Whale Detection", description = "고래 움직임 감지 API")
-public class WhaleDetectionController {
-
-    @GetMapping("/health")
-    @Operation(summary = "서비스 상태 확인", description = "고래 감지 서비스의 상태를 확인합니다")
-    @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "서비스 정상"),
-            @ApiResponse(responseCode = "503", description = "서비스 비정상")
-    })
-    public ResponseEntity<Map<String, Object>> getHealth() {
-        Map<String, Object> response = new HashMap<>();
-        response.put("status", "UP");
-        response.put("service", "Whale Detection");
-        response.put("timestamp", LocalDateTime.now());
-        return ResponseEntity.ok(response);
-    }
-
-    @GetMapping("/recent")
-    @Operation(summary = "최근 고래 움직임 조회", description = "최근 감지된 고래 움직임을 조회합니다")
-    public ResponseEntity<List<WhaleMovement>> getRecentMovements(
-            @RequestParam(defaultValue = "10") int limit) {
-        // 구현 예정
-        return ResponseEntity.ok(new ArrayList<>());
-    }
-}
-```
-
-### 5. 헬스 체크 및 모니터링
-
-```yaml
-# application.yml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics
-  endpoint:
-    health:
-      show-details: always
-```
-
-**사용 가능한 엔드포인트:**
-
-- **Health Check**: `http://localhost:8082/actuator/health`
-- **Info**: `http://localhost:8082/actuator/info`
-- **Metrics**: `http://localhost:8082/actuator/metrics`
-
-## 🔄 완전한 파이프라인 구현
-
-### 체결강도 분석 전체 파이프라인
-
-```java
-// TradeIntensityService.java 전체 플로우
-@PostConstruct
-public void startTradeIntensityJob() {
-    // 1. Kafka 소스에서 데이터 스트림 생성
-    DataStream<String> inputStream = env.fromSource(
-            kafkaSource,
-            WatermarkStrategy.noWatermarks(),
-            "Kafka Source - Trade Intensity");
-
-    // 2. JSON → CryptoTrade 역직렬화
-    DataStream<CryptoTrade> tradeStream = inputStream
-            .map(new JsonToCryptoTradeMapper())
-            .name("JSON to CryptoTrade - Trade Intensity");
-
-    // 3. 슬라이딩 윈도우 집계
-    DataStream<TradeIntensity> intensityStream = tradeStream
-            .keyBy(CryptoTrade::getCode)
-            .window(SlidingProcessingTimeWindows.of(
-                    Time.seconds(windowSizeSeconds),
-                    Time.seconds(windowSlideSeconds)))
-            .aggregate(new TradeVolumeAggregator())
-            .name("Trade Volume Aggregation");
-
-    // 4. 체결강도 분석
-    DataStream<TradeIntensity> analyzedStream = intensityStream
-            .map(new IntensityAnalyzer())
-            .name("Intensity Analysis");
-
-    // 5. JSON 직렬화
-    DataStream<String> outputStream = analyzedStream
-            .map(new TradeIntensityToJsonMapper())
-            .name("TradeIntensity to JSON");
-
-    // 6. Kafka 싱크로 결과 전송
-    outputStream.sinkTo(kafkaSink).name("Kafka Sink - Trade Intensity");
-
-    // 7. Job 실행
-    env.execute("Trade Intensity Calculation Job");
-}
-```
-
-## ⚡ 성능 최적화
-
-### 1. Flink 메모리 최적화
-
-```java
-// StreamExecutionEnvironment 설정
-env.setParallelism(1);  // 단일 파티션으로 메모리 효율화
-env.enableCheckpointing(10000);  // 10초마다 체크포인트로 장애 복구
-```
-
-### 2. 윈도우 최적화
-
-```java
-// 슬라이딩 윈도우 크기 조정
-// 체결강도: 60초 윈도우, 5초 슬라이드 (메모리 vs 실시간성 균형)
-// 고래 감지: 5초 윈도우, 1초 슬라이드 (높은 민감도)
-```
-
-### 3. 직렬화 최적화
-
-```java
-// Jackson ObjectMapper 재사용
-private static final ObjectMapper objectMapper = new ObjectMapper();
-
-// Kafka Simple String Schema 사용으로 오버헤드 최소화
-.setValueOnlyDeserializer(new SimpleStringSchema())
-```
-
-### 4. 로깅 최적화
-
-```java
-// 조건부 로깅으로 성능 향상
-if (isAlertTriggered) {
-    logger.info("🚨 체결강도 알림: ...");
-} else {
-    logger.debug("📊 체결강도 분석: ...");  // DEBUG 레벨로 상세 로그
-}
-```
-
-### 5. Spring Boot 성능 최적화
-
-#### 5-1. 비동기 Flink Job 실행
-
-```java
-// CompletableFuture.runAsync() 사용으로 웹 서버 블로킹 방지
-CompletableFuture.runAsync(() -> startRawLoggerJob());
-```
-
-#### 5-2. Actuator 엔드포인트 최적화
-
-```yaml
-# application.yml
-management:
-  endpoints:
-    web:
-      exposure:
-        include: health,info,metrics # 필요한 엔드포인트만 노출
-  endpoint:
-    health:
-      show-details: when-authorized # 보안 강화
-```
-
-#### 5-3. Swagger UI 최적화
-
-```java
-// SwaggerConfig.java
-@Profile("!prod")  // 프로덕션 환경에서는 비활성화
-@Configuration
-public class SwaggerConfig {
-    // 개발 환경에서만 API 문서화 활성화
-}
-```
-
-## 🎯 핵심 기술적 특징
-
-### 1. **실시간 스트리밍**
-
-- WebSocket 기반 실시간 데이터 수집
-- Flink의 이벤트 시간 기반 처리
-- 마이크로초 단위 지연시간 최소화
-
-### 2. **확장 가능한 아키텍처**
-
-- Kafka 파티셔닝으로 수평 확장
-- Flink 병렬 처리로 처리량 증대
-- Spring Boot의 마이크로서비스 구조
-
-### 3. **장애 내성**
-
-- Kafka의 메시지 지속성
-- Flink 체크포인트 기반 장애 복구
-- WebSocket 연결 실패 시 REST 폴백
-
-### 4. **유연한 분석**
-
-- 플러그인 형태의 분석 모듈
-- 윈도우 크기/슬라이드 설정 가능
-- 임계치 기반 동적 알림
-
-### 5. **웹 서버 및 API**
-
-- **비동기 Flink Job 실행**: `CompletableFuture.runAsync()`로 웹 서버 블로킹 방지
-- **Swagger UI**: OpenAPI 3.0 기반 API 문서화 및 테스트 인터페이스
-- **Spring Boot Actuator**: 헬스 체크 및 모니터링 엔드포인트
-- **RESTful API**: 체결강도 분석, 고래 감지 등 실시간 분석 결과 제공
-
-### 6. **개발자 경험**
-
-- **자동 API 문서화**: Swagger UI로 API 테스트 및 문서 확인
-- **실시간 모니터링**: Actuator를 통한 애플리케이션 상태 모니터링
-- **빠른 개발 사이클**: Spring Boot의 자동 설정 및 핫 리로드
-
-이 구현을 통해 초당 수백 건의 거래 데이터를 실시간으로 수집하고, 다양한 금융 지표를 계산하여 투자 의사결정에 활용할 수 있는 견고한 시스템을 구축했습니다. 또한 Spring Boot 웹 서버를 통해 분석 결과를 REST API로 제공하고, Swagger UI로 개발자들이 쉽게 API를 테스트하고 문서를 확인할 수 있도록 했습니다.
+테스트 종류:
+
+| 대상 | 방법 |
+| --- | --- |
+| 집계·규칙 병합·파싱 검증 | 순수 단위 테스트 |
+| 감지기 셋 | `ProcessFunctionTestHarnesses.forKeyedProcessFunction` 으로 체결을 넣고 출력 확인 (`flink-test-utils`) |
+| 체결강도 파이프라인 | 로컬 환경 `fromElements` + `executeAndCollect` 로 실제 윈도우 집계 |
+| 저장소 | `@JdbcTest` + H2. `schema.sql` 을 그대로 실행 |
+
+Flink 1.18 API 기준이다. `env.fromData`(1.19)는 없고 `fromElements`를 쓴다.
+
+## 8. 설계 결정 요약
+
+| 결정 | 이유 |
+| --- | --- |
+| `ticker` 대신 `trade` 구독 | 체결강도에는 체결 단위의 매수·매도 구분(`ask_bid`)이 필요하다. `ticker`의 `change`는 전일 대비 등락이라 쓸 수 없다 |
+| 모든 임계치를 원화 금액으로 | 종목마다 수량 단위가 달라 "0.5 BTC" 같은 기준은 다른 종목에 쓸 수 없다 |
+| 이벤트 시간 윈도우 | 재시작 뒤 Kafka 재생 시 과거 체결이 현재로 몰리지 않게 |
+| 파이프라인 등록 + 러너 1회 실행 | 서비스마다 `execute()` 하면 같은 토픽을 여러 번 읽고 두 번째 Job 은 시작도 못 한다 |
+| 지표·이벤트 토픽 분리 | 소비 시작점과 보존 정책이 다르다 (지표 latest, 이벤트 earliest) |
+| 파이프라인 간 스트림 미공유 | 한쪽을 끄거나 바꿔도 다른 쪽에 영향 없게. 5분 윈도우 중복 비용은 작다 |
+| API 는 Kafka 만 읽음 | Job 재시작과 API 가동을 분리 |
+| 규칙 변경은 Job 재시작 | Broadcast State 보다 코드가 훨씬 적고, 상태 초기화 비용이 작다 |
+| JPA 대신 JdbcTemplate | 테이블 둘에 ORM 은 과하다 |
+
+## 9. 알려진 한계
+
+- 메신저 알림은 범위 밖. 이벤트는 대시보드·API 에서만 본다. 붙인다면 `ResultConsumer.onEvent` 뒤에 발송기를 둔다.
+- Job 재시작 시 쿨다운·가격 이력·기준선 상태가 초기화된다.
+- `crypto-trades` 파티션이 하나라 병렬도 1 이다. 종목이 늘면 파티션과 `flink.parallelism` 을 함께 올린다.
+- spring-kafka 가 kafka-clients 를 3.6.0 으로 올린다. Flink 커넥터 3.0.2 는 3.2.3 기준이지만 at-least-once 싱크만 써서 문제가 없었다. exactly-once 로 바꾸면 다시 확인한다.
+- 워터마크 2초만큼 결과가 늦다. 더 빠른 감지가 필요하면 대량 체결 감지만 처리 시간으로 옮기는 것을 검토한다.
+- `SwaggerConfig` 의 연락처·운영 서버 주소는 자리 표시자다.
+
+## 10. 기능을 더할 때
+
+1. 새 파이프라인: `FlinkPipeline` 구현 `@Service` 를 만들고 `jobs.<name>.enabled` 를 읽는다. 필요한 싱크는 `FlinkJobConfig.stringSink(topic)` 으로 빈을 추가한다.
+2. 새 감지 종류: `DetectionEvent` 에 type 상수와 팩토리, 필요한 필드를 더하고 `schema.sql` 에 `ADD COLUMN IF NOT EXISTS`, `DetectionEventRepository` 의 insert·mapRow 를 맞춘다. 대시보드 배지 색은 `index.html` 의 `.badge.<TYPE>`.
+3. 새 임계치: `DetectionRule` 필드·`overriddenBy`·`missingOrInvalidField`, `detection_rule` 컬럼, 저장소 upsert·mapRow, `DetectionRuleService` 의 초깃값.
+4. 감지기는 반드시 하네스 테스트를 같이 둔다. 실데이터로는 임계치를 넘는 순간을 기다릴 수 없다.

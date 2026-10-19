@@ -1,37 +1,33 @@
-# 🚀 Crypto Tracker - 실시간 암호화폐 분석 플랫폼
+# 🚀 Crypto Tracker - 업비트 체결 흐름 감시 도구
 
-Spring Boot + Apache Flink를 활용한 실시간 암호화폐 데이터 스트리밍 분석 플랫폼입니다.
+업비트 BTC·ETH·DOGE 체결을 실시간으로 받아 종목별 체결강도·순매수를 집계하고, 대량 체결·급등락·거래량 급증을 감지해 대시보드와 API로 보여준다. Spring Boot 안에서 Apache Flink가 돌고, 결과는 Kafka를 거쳐 메모리와 PostgreSQL에 쌓인다.
 
 ## 📋 목차
 
-- [기술 스택](#기술-스택)
-- [시스템 아키텍처](#시스템-아키텍처)
-- [빌드 및 실행](#빌드-및-실행)
-- [기능 명세서](#기능-명세서)
-- [API 문서](#api-문서)
-- [모니터링](#모니터링)
-- [기술 구현 가이드](./TECHNICAL_GUIDE.md) 📚
+- [기술 스택](#-기술-스택)
+- [시스템 아키텍처](#-시스템-아키텍처)
+- [빌드 및 실행](#-빌드-및-실행)
+- [기능 명세서](#-기능-명세서)
+- [설정](#-설정)
+- [모니터링](#-모니터링)
+- [문제 해결](#-문제-해결)
+- [기술 가이드](./TECHNICAL_GUIDE.md) 📚 (구조와 설계 결정)
 
 ## 🛠 기술 스택
 
 ### Backend
 
-- **Java 17**
-- **Spring Boot 3.2.0**
-- **Apache Flink 1.18.1**
-- **Apache Kafka 7.5.3**
+- **Java 17**, **Spring Boot 3.2.0** (Web, Kafka, JDBC)
+- **Apache Flink 1.18.1** (Spring Boot 프로세스 안의 로컬 실행)
+- **PostgreSQL 16** (감지 이벤트 이력, 감지 규칙)
 
 ### Infrastructure
 
-- **Docker & Docker Compose**
-- **Zookeeper**
-- **Kafka UI (AKHQ)**
+- **Docker & Docker Compose**: Zookeeper, Kafka 7.5.3, Kafka UI, PostgreSQL
 
-### Data Processing
+### Data Collection
 
-- **Flink Streaming**
-- **Sliding Window Processing**
-- **Real-time Analytics**
+- **Python 3** `scripts/producer.py` (websockets, kafka-python)
 
 ## 🏗 시스템 아키텍처
 
@@ -84,7 +80,7 @@ docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-n
 docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-trades-dlq --replication-factor 1 --partitions 1
 ```
 
-### 3. 데이터 프로듀서 환경 설정및
+### 3. 데이터 프로듀서 환경 설정
 
 ```bash
 # Python 가상환경 생성 및 활성화
@@ -386,41 +382,9 @@ Flink Job은 Spring Boot 프로세스 안의 로컬 환경에서 돌아 별도 W
 
 ## 📝 개발 가이드
 
-### 새로운 분석 기능 추가
+구조, 데이터 계약, 감지기 상태, 설계 결정, 기능 추가 절차는 [TECHNICAL_GUIDE.md](./TECHNICAL_GUIDE.md)에 있다. 로컬에 JDK가 없으면 Docker의 `gradle:8.5-jdk17` 이미지로 테스트와 실행을 할 수 있고, 그 명령도 거기 있다.
 
-1. **DTO 클래스 생성**
-
-   ```java
-   @Data
-   public class NewAnalysis {
-       private String timestamp;
-       private String code;
-       private double value;
-       // ... 기타 필드
-   }
-   ```
-
-2. **서비스 클래스 구현**
-
-   ```java
-   @Service
-   public class NewAnalysisService {
-       // 분석 로직 구현
-   }
-   ```
-
-3. **컨트롤러 추가**
-   ```java
-   @RestController
-   @RequestMapping("/api/new-analysis")
-   public class NewAnalysisController {
-       // API 엔드포인트 구현
-   }
-   ```
-
-### 설정 변경
-
-`src/main/resources/application.yml` 파일에서 각종 설정을 변경할 수 있습니다.
+임계치는 `/api/rules`로 바꾸고, 구간 길이·토픽·포트 같은 구조 설정은 `src/main/resources/application.yml`에서 바꾼다.
 
 ## 📄 라이선스
 
