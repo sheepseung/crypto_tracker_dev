@@ -11,16 +11,16 @@ spring:
 jobs:
   tradeIntensity:
     enabled: true
-  whaleDetection:
-    enabled: false
+  detection:
+    enabled: true
 
 # Kafka 설정
 kafka:
   bootstrap-servers: localhost:9092
   input-topic: crypto-trades
-  output-topic: crypto-analysis
   dead-letter-topic: crypto-trades-dlq
   metrics-topic: crypto-metrics
+  events-topic: crypto-events
   group-id: crypto-flink-group
 
 # Flink 설정
@@ -32,21 +32,17 @@ flink:
     max-concurrent: 1 # 동시 체크포인트 수
   parallelism: 1 # 병렬 처리 수
 
-# 고래 감지 설정
-whale:
-  detection:
-    threshold: 0.5 # 고래 움직임 감지 임계치 (BTC)
-    window:
-      size: 5 # 슬라이딩 윈도우 크기 (초)
-      slide: 1 # 슬라이딩 윈도우 슬라이드 간격 (초)
-    alert:
-      critical: 2.0 # CRITICAL 알림 임계치 (BTC)
-      high: 1.0 # HIGH 알림 임계치 (BTC)
-      medium: 0.5 # MEDIUM 알림 임계치 (BTC)
-    pattern:
-      massive-movement: 3.0 # 대량 움직임 패턴 임계치 (BTC)
-      significant-movement: 1.5 # 중요 움직임 패턴 임계치 (BTC)
-      moderate-movement: 0.8 # 보통 움직임 패턴 임계치 (BTC)
+# 감지 설정 (금액은 원화, 시간은 체결 시각 기준)
+detection:
+  large-trade:
+    single-amount: 300000000 # 단일 체결 금액 임계치 (3억 원)
+    burst-window-seconds: 10 # 집중 체결을 보는 구간
+    burst-amount: 300000000 # 구간 안 같은 방향 체결 합 임계치 (3억 원)
+    cooldown-seconds: 60 # 같은 종목·조건·방향 재감지 간격
+  price-move:
+    window-seconds: 300 # 변동률 기준 구간 (5분)
+    threshold-percent: 2.0 # 급등·급락 임계치 (±2%)
+    cooldown-seconds: 300 # 같은 방향 재감지 간격. 임계치만큼 더 움직이면 그 전에도 낸다
 
 # 체결강도 설정
 trade:

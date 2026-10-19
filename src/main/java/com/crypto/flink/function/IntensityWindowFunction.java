@@ -1,21 +1,16 @@
 package com.crypto.flink.function;
 
 import com.crypto.flink.dto.TradeIntensity;
+import com.crypto.flink.util.KstTime;
 import org.apache.flink.streaming.api.functions.windowing.ProcessWindowFunction;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
 import org.apache.flink.util.Collector;
-
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.format.DateTimeFormatter;
 
 /**
  * 누적 결과에 종목 코드와 실제 윈도우 시간을 붙여 TradeIntensity 로 만든다.
  */
 public class IntensityWindowFunction
         extends ProcessWindowFunction<TradeAmountAggregator.Accumulator, TradeIntensity, String, TimeWindow> {
-
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     @Override
     public void process(String code, Context context, Iterable<TradeAmountAggregator.Accumulator> accumulators,
@@ -29,7 +24,7 @@ public class IntensityWindowFunction
         result.setWindowSeconds((int) ((window.getEnd() - window.getStart()) / 1000));
         result.setWindowStart(window.getStart());
         result.setWindowEnd(window.getEnd());
-        result.setWindowEndAt(DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(Instant.ofEpochMilli(window.getEnd()).atZone(KST)));
+        result.setWindowEndAt(KstTime.format(window.getEnd()));
         result.setBuyAmount(acc.buyAmount);
         result.setSellAmount(acc.sellAmount);
         result.setTotalAmount(acc.buyAmount + acc.sellAmount);

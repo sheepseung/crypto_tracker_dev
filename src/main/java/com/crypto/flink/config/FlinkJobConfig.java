@@ -23,8 +23,8 @@ public class FlinkJobConfig {
     @Value("${kafka.input-topic:crypto-trades}")
     private String inputTopic;
 
-    @Value("${kafka.output-topic:crypto-analysis}")
-    private String outputTopic;
+    @Value("${kafka.events-topic:crypto-events}")
+    private String eventsTopic;
 
     @Value("${kafka.group-id:crypto-flink-group}")
     private String groupId;
@@ -49,11 +49,11 @@ public class FlinkJobConfig {
     }
 
     /**
-     * Kafka 싱크 설정
+     * 감지 이벤트(대량 체결, 급등·급락)를 보내는 싱크.
      */
     @Bean
-    public KafkaSink<String> kafkaSink() {
-        return stringSink(outputTopic);
+    public KafkaSink<String> eventsSink() {
+        return stringSink(eventsTopic);
     }
 
     /**
