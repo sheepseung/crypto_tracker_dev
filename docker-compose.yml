@@ -39,31 +39,18 @@ services:
       KAFKA_CLUSTERS_0_ZOOKEEPER: zookeeper:2181
       KAFKA_CLUSTERS_0_READONLY: false
 
-  # Flink JobManager
-  flink-jobmanager:
-    image: apache/flink:1.18.1-scala_2.12
-    container_name: flink-jobmanager
-    depends_on:
-      - kafka
+  # 감지 이벤트 이력 저장소. Flink Job 은 Spring Boot 안에서 돌므로 별도 Flink 클러스터는 두지 않는다
+  postgres:
+    image: postgres:16-alpine
+    container_name: postgres
     ports:
-      - "8081:8081"
+      - "5432:5432"
     environment:
-      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
-      - JOB_MANAGER_RPC_PORT=6123
-    command: jobmanager
+      POSTGRES_DB: crypto
+      POSTGRES_USER: crypto
+      POSTGRES_PASSWORD: crypto
     volumes:
-      - ./flink-data:/opt/flink/data
+      - postgres-data:/var/lib/postgresql/data
 
-  # Flink TaskManager
-  flink-taskmanager:
-    image: apache/flink:1.18.1-scala_2.12
-    container_name: flink-taskmanager
-    depends_on:
-      - flink-jobmanager
-    environment:
-      - JOB_MANAGER_RPC_ADDRESS=flink-jobmanager
-      - JOB_MANAGER_RPC_PORT=6123
-      - TASK_MANAGER_NUMBER_OF_TASK_SLOTS=2
-    command: taskmanager
-    volumes:
-      - ./flink-data:/opt/flink/data
+volumes:
+  postgres-data:

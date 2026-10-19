@@ -6,6 +6,18 @@ spring:
     name: crypto-flink-spring
   profiles:
     active: dev
+  kafka:
+    bootstrap-servers: ${kafka.bootstrap-servers}
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+  datasource:
+    url: jdbc:postgresql://localhost:5432/crypto
+    username: crypto
+    password: crypto
+  sql:
+    init:
+      mode: always # schema.sql 을 기동마다 실행 (IF NOT EXISTS 라 반복해도 안전)
 
 # 파이프라인 실행 플래그. 켜진 파이프라인을 모두 붙여 Flink Job 하나로 띄운다
 jobs:
@@ -21,7 +33,8 @@ kafka:
   dead-letter-topic: crypto-trades-dlq
   metrics-topic: crypto-metrics
   events-topic: crypto-events
-  group-id: crypto-flink-group
+  group-id: crypto-flink-group # Flink 소스
+  api-group-id: crypto-api # 결과 토픽을 읽는 Spring 소비자
 
 # Flink 설정
 flink:

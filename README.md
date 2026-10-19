@@ -71,7 +71,7 @@ python3 --version
 ### 2. 인프라 서비스 실행
 
 ```bash
-# Kafka, Zookeeper, Flink 클러스터 실행
+# Kafka, Zookeeper, Kafka UI, PostgreSQL 실행 (Flink Job 은 Spring Boot 안에서 돈다)
 docker compose up -d
 
 # 서비스 상태 확인
@@ -175,7 +175,7 @@ pgrep -fl producer  # 프로듀서 확인
 - **Swagger UI**: http://localhost:8082/swagger-ui/index.html
 - **API Documentation**: http://localhost:8082/v3/api-docs
 - **Kafka UI**: http://localhost:8080
-- **Flink Web UI**: http://localhost:8081
+- **PostgreSQL**: localhost:5432 (db/user/password 모두 `crypto`)
 - **헬스 체크**: http://localhost:8082/actuator/health
 
 ### 9. 프로세스 종료
@@ -254,7 +254,19 @@ detection:
 {"type":"PRICE_SURGE","code":"KRW-DOGE","eventTime":1718000200000,"eventTimeAt":"2024-06-10T15:03:20+09:00","price":204.1,"priceFrom":200.0,"priceTo":204.1,"changePercent":2.05,"windowSeconds":300,"message":"KRW-DOGE 5분 내 +2.05% (200원 → 204원)"}
 ```
 
-REST API와 대시보드는 두 토픽을 소비해 제공할 예정이며 아직 없다. 메신저 전송은 범위 밖이다.
+### 3. 조회 API (ResultConsumer → MetricsStore · PostgreSQL)
+
+Spring이 `crypto-metrics`와 `crypto-events`를 소비해 체결강도는 메모리에 최신 값만, 감지 이벤트는 PostgreSQL `detection_event` 테이블에 담는다. API는 Flink 상태를 직접 읽지 않고 이 저장소만 본다. 같은 이벤트가 다시 와도 `(type, code, event_time)` 고유 제약으로 한 번만 남는다.
+
+```
+GET /api/intensity?window=300&sort=netAmount   # 구간별 전 종목 체결강도. window: 60|300|900, sort: netAmount|intensity|totalAmount|code
+GET /api/intensity/{code}                      # 한 종목의 모든 구간. 지표가 아직 없으면 404
+GET /api/events?code=&type=&since=&limit=50    # 감지 이벤트 최신순. since: ISO-8601 또는 epoch ms (기본 최근 24시간)
+```
+
+Swagger UI: http://localhost:8082/swagger-ui/index.html
+
+대시보드는 다음 단계이고, 메신저 전송은 범위 밖이다.
 
 ## 🔧 설정
 
@@ -303,9 +315,7 @@ kafka:
 
 ### 2. Flink 모니터링
 
-- **Flink Web UI**: http://localhost:8081
-- **Job Manager**: http://localhost:8081/#/job-manager
-- **Task Manager**: http://localhost:8081/#/task-manager
+Flink Job은 Spring Boot 프로세스 안의 로컬 환경에서 돌아 별도 Web UI가 없다. 기동 로그의 `Flink Job 시작: jobId=...` 줄과 Kafka UI의 `crypto-metrics`·`crypto-events` 토픽 유입으로 확인한다.
 
 ### 3. Kafka 모니터링
 
@@ -323,24 +333,20 @@ kafka:
    # 사용 중인 포트 확인
    lsof -i :8082
    lsof -i :9092
-   lsof -i :8081
+   lsof -i :5432
    ```
 
 2. **Docker 컨테이너 문제**
 
    ```bash
    # 컨테이너 로그 확인
-   docker-compose logs kafka
-   docker-compose logs flink-jobmanager
-   docker-compose logs flink-taskmanager
+   docker compose logs kafka
+   docker compose logs postgres
    ```
 
 3. **Flink Job 실패**
 
-   ```bash
-   # Flink Web UI에서 Job 상태 확인
-   # http://localhost:8081/#/jobs
-   ```
+   기동 로그에서 `Flink Job 시작` 이후의 예외를 본다. Kafka(9092)나 PostgreSQL(5432)에 못 붙으면 애플리케이션이 뜨지 않는다.
 
 4. **Flink Job이 뜨지 않는 문제**
 
