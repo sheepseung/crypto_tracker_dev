@@ -29,6 +29,9 @@ public class FlinkJobConfig {
     @Value("${kafka.group-id:crypto-flink-group}")
     private String groupId;
 
+    @Value("${kafka.dead-letter-topic:crypto-trades-dlq}")
+    private String deadLetterTopic;
+
     /**
      * Kafka 소스 설정
      */
@@ -47,10 +50,23 @@ public class FlinkJobConfig {
      */
     @Bean
     public KafkaSink<String> kafkaSink() {
+        return stringSink(outputTopic);
+    }
+
+    /**
+     * 파싱에 실패한 원본 메시지를 보내는 싱크.
+     * 본류에서 조용히 버리면 수집 쪽 문제를 알 수 없으므로 별도 토픽에 남긴다.
+     */
+    @Bean
+    public KafkaSink<String> deadLetterSink() {
+        return stringSink(deadLetterTopic);
+    }
+
+    private KafkaSink<String> stringSink(String topic) {
         return KafkaSink.<String>builder()
                 .setBootstrapServers(bootstrapServers)
                 .setRecordSerializer(KafkaRecordSerializationSchema.builder()
-                        .setTopic(outputTopic)
+                        .setTopic(topic)
                         .setValueSerializationSchema(new SimpleStringSchema())
                         .build())
                 .build();

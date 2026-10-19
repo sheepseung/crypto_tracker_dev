@@ -79,6 +79,7 @@ docker compose ps
 # Kafka 토픽 생성
 docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-trades --replication-factor 1 --partitions 1
 docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-analysis --replication-factor 1 --partitions 1
+docker exec kafka kafka-topics --bootstrap-server localhost:9092 --create --if-not-exists --topic crypto-trades-dlq --replication-factor 1 --partitions 1
 ```
 
 ### 3. 데이터 프로듀서 환경 설정및
@@ -145,12 +146,17 @@ pkill -f "CryptoFlinkApplication"
 # 가상환경 활성화 (필요시)
 source .venv/bin/activate
 
-# Upbit WebSocket 데이터 프로듀서 실행
+# Upbit WebSocket 체결(trade) 프로듀서 실행 (기본 종목: KRW-BTC, KRW-ETH, KRW-DOGE)
 python scripts/producer.py
+
+# 종목·Kafka 주소·토픽은 환경 변수로 바꾼다
+UPBIT_MARKETS=KRW-BTC,KRW-XRP KAFKA_BOOTSTRAP_SERVERS=localhost:9092 KAFKA_TOPIC=crypto-trades python scripts/producer.py
 
 # 또는 백그라운드 실행
 python scripts/producer.py &
 ```
+
+파싱에 실패한 메시지는 Flink Job이 `crypto-trades-dlq` 토픽으로 보낸다. Kafka UI에서 이 토픽이 비어 있으면 수집 형식이 맞는 것이다.
 
 ### 7. 동작 확인
 
@@ -220,7 +226,7 @@ jobs:
 
 - **기능**: Kafka에서 수집한 원본 메시지를 콘솔에 로그로 출력
 - **용도**: 데이터 수집 확인, 디버깅, 모니터링
-- **로그 형식**: `📥 RAW: {"type":"ticker","code":"KRW-BTC",...}`
+- **로그 형식**: `📥 RAW: {"type":"trade","code":"KRW-BTC","ask_bid":"BID",...}`
 - **파이프라인**: Kafka Source → Map(로깅) → 종료 (싱크 없음)
 
 ### 1. 실시간 암호화폐 분석 (CryptoAnalysisController)

@@ -2,6 +2,7 @@ package com.crypto.flink.service;
 
 import com.crypto.flink.dto.CryptoTrade;
 import com.crypto.flink.dto.WhaleMovement;
+import com.crypto.flink.function.TradeJsonParser;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -10,12 +11,14 @@ import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
 import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingProcessingTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -57,7 +60,12 @@ public class WhaleDetectionService {
     private KafkaSource<String> kafkaSource;
 
     @Autowired
+    @Qualifier("kafkaSink")
     private KafkaSink<String> kafkaSink;
+
+    @Autowired
+    @Qualifier("deadLetterSink")
+    private KafkaSink<String> deadLetterSink;
 
     /**
      * 고래 감지 Flink Job 시작
@@ -80,9 +88,13 @@ public class WhaleDetectionService {
                     "Kafka Source - Whale Detection");
 
             // JSON 문자열을 CryptoTrade 객체로 변환
-            DataStream<CryptoTrade> tradeStream = inputStream
-                    .map(new JsonToCryptoTradeMapper())
+            SingleOutputStreamOperator<CryptoTrade> tradeStream = inputStream
+                    .process(new TradeJsonParser())
                     .name("JSON to CryptoTrade - Whale Detection");
+
+            tradeStream.getSideOutput(TradeJsonParser.PARSE_FAILURES)
+                    .sinkTo(deadLetterSink)
+                    .name("Dead Letter - Whale Detection");
 
             // 슬라이딩 윈도우를 사용한 거래량 집계
             DataStream<WhaleMovement> whaleMovementStream = tradeStream
@@ -115,21 +127,6 @@ public class WhaleDetectionService {
     }
 
     /**
-     * JSON 문자열을 CryptoTrade 객체로 변환하는 Mapper
-     */
-    public static class JsonToCryptoTradeMapper implements MapFunction<String, CryptoTrade> {
-        @Override
-        public CryptoTrade map(String json) throws Exception {
-            try {
-                return objectMapper.readValue(json, CryptoTrade.class);
-            } catch (Exception e) {
-                logger.error("JSON 파싱 오류: " + json, e);
-                return null;
-            }
-        }
-    }
-
-    /**
      * 고래 거래량을 집계하는 AggregateFunction
      */
     public static class WhaleVolumeAggregator
@@ -144,17 +141,13 @@ public class WhaleDetectionService {
         public Tuple3<Double, Double, Integer> add(CryptoTrade trade,
                 Tuple3<Double, Double, Integer> accumulator) {
 
-            if (trade == null)
-                return accumulator;
-
             Double buyVolume = accumulator.f0;
             Double sellVolume = accumulator.f1;
             Integer count = accumulator.f2;
 
-            // 매수/매도 구분 (change 필드 기반)
-            if ("RISE".equals(trade.getChange())) {
+            if (trade.isBid()) {
                 buyVolume += trade.getTradeVolume();
-            } else if ("FALL".equals(trade.getChange())) {
+            } else {
                 sellVolume += trade.getTradeVolume();
             }
 

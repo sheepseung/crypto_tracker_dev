@@ -1,13 +1,19 @@
 package com.crypto.flink.dto;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
-import java.time.LocalDateTime;
 
 /**
- * 암호화폐 거래 데이터 DTO
- * 업비트 API에서 수신하는 실시간 거래 정보를 담습니다.
+ * 업비트 WebSocket trade 메시지 한 건.
+ * Flink POJO 직렬화 요건(public 기본 생성자, 모든 필드의 getter/setter)을 지킨다.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class CryptoTrade {
+
+    public static final String TYPE_TRADE = "trade";
+    public static final String ASK = "ASK";
+    public static final String BID = "BID";
 
     @JsonProperty("type")
     private String type;
@@ -21,40 +27,35 @@ public class CryptoTrade {
     @JsonProperty("trade_volume")
     private Double tradeVolume;
 
+    // 업비트 기준 BID 는 매수 주문이 체결된 건, ASK 는 매도 주문이 체결된 건
+    @JsonProperty("ask_bid")
+    private String askBid;
+
+    // 체결 시각(ms). timestamp 는 업비트가 메시지를 보낸 시각이라 이벤트 시간으로는 이 값을 쓴다
+    @JsonProperty("trade_timestamp")
+    private Long tradeTimestamp;
+
     @JsonProperty("timestamp")
     private Long timestamp;
+
+    @JsonProperty("sequential_id")
+    private Long sequentialId;
+
+    @JsonProperty("prev_closing_price")
+    private Double prevClosingPrice;
 
     @JsonProperty("change")
     private String change;
 
-    @JsonProperty("change_rate")
-    private Double changeRate;
+    @JsonProperty("change_price")
+    private Double changePrice;
 
-    @JsonProperty("acc_trade_price")
-    private Double accTradePrice;
+    @JsonProperty("stream_type")
+    private String streamType;
 
-    @JsonProperty("acc_trade_volume")
-    private Double accTradeVolume;
-
-    // 생성자
     public CryptoTrade() {
     }
 
-    public CryptoTrade(String type, String code, Double tradePrice, Double tradeVolume,
-            Long timestamp, String change, Double changeRate,
-            Double accTradePrice, Double accTradeVolume) {
-        this.type = type;
-        this.code = code;
-        this.tradePrice = tradePrice;
-        this.tradeVolume = tradeVolume;
-        this.timestamp = timestamp;
-        this.change = change;
-        this.changeRate = changeRate;
-        this.accTradePrice = accTradePrice;
-        this.accTradeVolume = accTradeVolume;
-    }
-
-    // Getter & Setter
     public String getType() {
         return type;
     }
@@ -87,12 +88,44 @@ public class CryptoTrade {
         this.tradeVolume = tradeVolume;
     }
 
+    public String getAskBid() {
+        return askBid;
+    }
+
+    public void setAskBid(String askBid) {
+        this.askBid = askBid;
+    }
+
+    public Long getTradeTimestamp() {
+        return tradeTimestamp;
+    }
+
+    public void setTradeTimestamp(Long tradeTimestamp) {
+        this.tradeTimestamp = tradeTimestamp;
+    }
+
     public Long getTimestamp() {
         return timestamp;
     }
 
     public void setTimestamp(Long timestamp) {
         this.timestamp = timestamp;
+    }
+
+    public Long getSequentialId() {
+        return sequentialId;
+    }
+
+    public void setSequentialId(Long sequentialId) {
+        this.sequentialId = sequentialId;
+    }
+
+    public Double getPrevClosingPrice() {
+        return prevClosingPrice;
+    }
+
+    public void setPrevClosingPrice(Double prevClosingPrice) {
+        this.prevClosingPrice = prevClosingPrice;
     }
 
     public String getChange() {
@@ -103,62 +136,42 @@ public class CryptoTrade {
         this.change = change;
     }
 
-    public Double getChangeRate() {
-        return changeRate;
+    public Double getChangePrice() {
+        return changePrice;
     }
 
-    public void setChangeRate(Double changeRate) {
-        this.changeRate = changeRate;
+    public void setChangePrice(Double changePrice) {
+        this.changePrice = changePrice;
     }
 
-    public Double getAccTradePrice() {
-        return accTradePrice;
+    public String getStreamType() {
+        return streamType;
     }
 
-    public void setAccTradePrice(Double accTradePrice) {
-        this.accTradePrice = accTradePrice;
+    public void setStreamType(String streamType) {
+        this.streamType = streamType;
     }
 
-    public Double getAccTradeVolume() {
-        return accTradeVolume;
+    @JsonIgnore
+    public boolean isBid() {
+        return BID.equals(askBid);
     }
 
-    public void setAccTradeVolume(Double accTradeVolume) {
-        this.accTradeVolume = accTradeVolume;
-    }
-
-    /**
-     * 타임스탬프를 LocalDateTime으로 변환
-     */
-    public LocalDateTime getTradeDateTime() {
-        if (timestamp != null) {
-            return LocalDateTime.ofEpochSecond(timestamp / 1000, 0, java.time.ZoneOffset.UTC);
-        }
-        return null;
-    }
-
-    /**
-     * 가격 변동률을 퍼센트로 변환
-     */
-    public Double getChangeRatePercent() {
-        if (changeRate != null) {
-            return changeRate * 100;
-        }
-        return 0.0;
+    /** 체결 금액(KRW). 종목마다 수량 단위가 달라 비교와 임계치는 금액으로 한다. */
+    @JsonIgnore
+    public double getTradeAmount() {
+        return tradePrice * tradeVolume;
     }
 
     @Override
     public String toString() {
         return "CryptoTrade{" +
-                "type='" + type + '\'' +
-                ", code='" + code + '\'' +
+                "code='" + code + '\'' +
+                ", askBid='" + askBid + '\'' +
                 ", tradePrice=" + tradePrice +
                 ", tradeVolume=" + tradeVolume +
-                ", timestamp=" + timestamp +
-                ", change='" + change + '\'' +
-                ", changeRate=" + changeRate +
-                ", accTradePrice=" + accTradePrice +
-                ", accTradeVolume=" + accTradeVolume +
+                ", tradeTimestamp=" + tradeTimestamp +
+                ", sequentialId=" + sequentialId +
                 '}';
     }
 }

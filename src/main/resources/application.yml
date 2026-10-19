@@ -23,6 +23,7 @@ kafka:
   bootstrap-servers: localhost:9092
   input-topic: crypto-trades
   output-topic: crypto-analysis
+  dead-letter-topic: crypto-trades-dlq
   group-id: crypto-flink-group
 
 # Flink 설정
