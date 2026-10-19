@@ -2,17 +2,14 @@ package com.crypto.flink.service;
 
 import com.crypto.flink.dto.CryptoTrade;
 import com.crypto.flink.dto.WhaleMovement;
-import com.crypto.flink.function.TradeJsonParser;
+import com.crypto.flink.job.FlinkPipeline;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.flink.api.common.functions.AggregateFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.common.functions.RichMapFunction;
 import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.connector.kafka.source.KafkaSource;
 import org.apache.flink.connector.kafka.sink.KafkaSink;
 import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.datastream.SingleOutputStreamOperator;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.windowing.assigners.SlidingProcessingTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.slf4j.Logger;
@@ -22,7 +19,6 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import jakarta.annotation.PostConstruct;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 
@@ -36,7 +32,7 @@ import java.time.format.DateTimeFormatter;
  * - 복잡한 이벤트 패턴 감지 (CEP)
  */
 @Service
-public class WhaleDetectionService {
+public class WhaleDetectionService implements FlinkPipeline {
 
     private static final Logger logger = LoggerFactory.getLogger(WhaleDetectionService.class);
     private static final ObjectMapper objectMapper = new ObjectMapper();
@@ -54,76 +50,45 @@ public class WhaleDetectionService {
     private boolean jobEnabled;
 
     @Autowired
-    private StreamExecutionEnvironment env;
-
-    @Autowired
-    private KafkaSource<String> kafkaSource;
-
-    @Autowired
     @Qualifier("kafkaSink")
     private KafkaSink<String> kafkaSink;
 
-    @Autowired
-    @Qualifier("deadLetterSink")
-    private KafkaSink<String> deadLetterSink;
+    @Override
+    public String name() {
+        return "whaleDetection";
+    }
 
-    /**
-     * 고래 감지 Flink Job 시작
-     */
-    @PostConstruct
-    public void startWhaleDetectionJob() {
-        try {
-            if (!jobEnabled) {
-                logger.info("⏸️ WhaleDetectionService 비활성화됨 (jobs.whaleDetection.enabled=false)");
-                return;
-            }
-            logger.info("🐋 고래 감지 Flink Job을 시작합니다...");
-            logger.info("📊 설정값 - 임계치: {} BTC, 윈도우 크기: {}초, 슬라이드: {}초",
-                    whaleThreshold, windowSizeSeconds, windowSlideSeconds);
+    @Override
+    public boolean isEnabled() {
+        return jobEnabled;
+    }
 
-            // Kafka 소스에서 데이터 스트림 생성
-            DataStream<String> inputStream = env.fromSource(
-                    kafkaSource,
-                    org.apache.flink.api.common.eventtime.WatermarkStrategy.noWatermarks(),
-                    "Kafka Source - Whale Detection");
+    @Override
+    public void attach(DataStream<CryptoTrade> tradeStream) {
+        logger.info("📊 고래 감지 설정값 - 임계치: {} BTC, 윈도우 크기: {}초, 슬라이드: {}초",
+                whaleThreshold, windowSizeSeconds, windowSlideSeconds);
 
-            // JSON 문자열을 CryptoTrade 객체로 변환
-            SingleOutputStreamOperator<CryptoTrade> tradeStream = inputStream
-                    .process(new TradeJsonParser())
-                    .name("JSON to CryptoTrade - Whale Detection");
+        // 슬라이딩 윈도우를 사용한 거래량 집계
+        DataStream<WhaleMovement> whaleMovementStream = tradeStream
+                .keyBy(CryptoTrade::getCode)
+                .window(SlidingProcessingTimeWindows.of(
+                        Time.seconds(windowSizeSeconds),
+                        Time.seconds(windowSlideSeconds)))
+                .aggregate(new WhaleVolumeAggregator())
+                .name("Whale Volume Aggregation");
 
-            tradeStream.getSideOutput(TradeJsonParser.PARSE_FAILURES)
-                    .sinkTo(deadLetterSink)
-                    .name("Dead Letter - Whale Detection");
+        // 고래 움직임 분석 및 패턴 감지
+        DataStream<WhaleMovement> analyzedStream = whaleMovementStream
+                .map(new WhaleMovementAnalyzer())
+                .name("Whale Movement Analysis");
 
-            // 슬라이딩 윈도우를 사용한 거래량 집계
-            DataStream<WhaleMovement> whaleMovementStream = tradeStream
-                    .keyBy(CryptoTrade::getCode)
-                    .window(SlidingProcessingTimeWindows.of(
-                            Time.seconds(windowSizeSeconds),
-                            Time.seconds(windowSlideSeconds)))
-                    .aggregate(new WhaleVolumeAggregator())
-                    .name("Whale Volume Aggregation");
+        // 분석 결과를 JSON 문자열로 변환
+        DataStream<String> outputStream = analyzedStream
+                .map(new WhaleMovementToJsonMapper())
+                .name("WhaleMovement to JSON");
 
-            // 고래 움직임 분석 및 패턴 감지
-            DataStream<WhaleMovement> analyzedStream = whaleMovementStream
-                    .map(new WhaleMovementAnalyzer())
-                    .name("Whale Movement Analysis");
-
-            // 분석 결과를 JSON 문자열로 변환
-            DataStream<String> outputStream = analyzedStream
-                    .map(new WhaleMovementToJsonMapper())
-                    .name("WhaleMovement to JSON");
-
-            // Kafka로 결과 전송
-            outputStream.sinkTo(kafkaSink).name("Kafka Sink - Whale Detection");
-
-            // Job 실행
-            env.execute("Whale Detection Job");
-
-        } catch (Exception e) {
-            logger.error("❌ 고래 감지 Job 실행 중 오류 발생: ", e);
-        }
+        // Kafka로 결과 전송
+        outputStream.sinkTo(kafkaSink).name("Kafka Sink - Whale Detection");
     }
 
     /**

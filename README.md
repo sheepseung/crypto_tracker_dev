@@ -106,7 +106,7 @@ pip install -r requirements.txt
 
 ### 5. 애플리케이션 실행
 
-#### 5-1. 기본 실행 (원본 로그만 활성화)
+#### 5-1. 기본 실행 (체결강도 파이프라인 활성화)
 
 ```bash
 # Spring Boot 애플리케이션 실행
@@ -116,28 +116,16 @@ pip install -r requirements.txt
 ./gradlew bootRun &
 ```
 
-#### 5-2. 특정 분석 Job 활성화
+#### 5-2. 파이프라인 선택
+
+켜진 파이프라인은 모두 한 Flink Job에 붙어 함께 실행된다. Kafka 토픽은 한 번만 읽는다.
 
 ```bash
-# 체결강도 분석만 활성화
-./gradlew bootRun --args="--jobs.rawLogger.enabled=false --jobs.tradeIntensity.enabled=true"
+# 고래 감지도 함께 활성화
+./gradlew bootRun --args="--jobs.whaleDetection.enabled=true"
 
-# 고래 감지만 활성화
-./gradlew bootRun --args="--jobs.rawLogger.enabled=false --jobs.whaleDetection.enabled=true"
-
-# 모든 분석 Job 활성화
-./gradlew bootRun --args="--jobs.rawLogger.enabled=false --jobs.tradeIntensity.enabled=true --jobs.whaleDetection.enabled=true --jobs.cryptoStreaming.enabled=true"
-```
-
-#### 5-3. 실행 문제 해결
-
-**문제**: Flink Job이 Spring Boot 웹 서버를 블로킹하는 경우
-**해결**: `CompletableFuture.runAsync()`를 사용하여 별도 스레드에서 Flink Job 실행
-
-```bash
-# 애플리케이션 재시작
-pkill -f "CryptoFlinkApplication"
-./gradlew bootRun
+# 체결강도 비활성화
+./gradlew bootRun --args="--jobs.tradeIntensity.enabled=false"
 ```
 
 ### 6. 데이터 프로듀서 실행
@@ -204,30 +192,17 @@ docker compose down
 
 ## 📊 기능 명세서
 
-### 0. Job 실행 제어 및 원본 로그 스트리밍
+### 0. 파이프라인 실행 제어
 
-#### Job 실행 제어 기능
-
-모든 Flink Job은 `application.yml`의 `jobs.*` 플래그로 개별 제어가 가능합니다.
+`FlinkJobRunner`가 기동 시 `crypto-trades`를 한 번 읽어 파싱·검증하고, 켜진 파이프라인(`FlinkPipeline` 구현체)을 모두 붙여 Flink Job 하나(`crypto-tracker`)로 띄운다. 파싱에 실패한 메시지는 `crypto-trades-dlq`로 간다. 수집 원본 확인은 Kafka UI(http://localhost:8080)에서 한다.
 
 ```yaml
 jobs:
-  rawLogger:
-    enabled: true # 원본 로그 스트리밍 (기본값: true)
-  cryptoStreaming:
-    enabled: false # 가격 분석 (기본값: false)
   tradeIntensity:
-    enabled: false # 체결강도 분석 (기본값: false)
+    enabled: true # 체결강도 지표 (기본값: true)
   whaleDetection:
     enabled: false # 고래 감지 (기본값: false)
 ```
-
-#### 원본 로그 스트리밍 (RawLogStreamingService)
-
-- **기능**: Kafka에서 수집한 원본 메시지를 콘솔에 로그로 출력
-- **용도**: 데이터 수집 확인, 디버깅, 모니터링
-- **로그 형식**: `📥 RAW: {"type":"trade","code":"KRW-BTC","ask_bid":"BID",...}`
-- **파이프라인**: Kafka Source → Map(로깅) → 종료 (싱크 없음)
 
 ### 1. 실시간 암호화폐 분석 (CryptoAnalysisController)
 
@@ -308,14 +283,10 @@ REST API와 대시보드는 이 토픽을 소비해 제공할 예정이며 아�
 ### Job 실행 제어
 
 ```yaml
-# Job 실행 플래그
+# 파이프라인 실행 플래그. 켜진 파이프라인을 모두 붙여 Flink Job 하나로 띄운다
 jobs:
-  rawLogger:
-    enabled: true # 원본 로그 스트리밍
-  cryptoStreaming:
-    enabled: false # 가격 분석
   tradeIntensity:
-    enabled: false # 체결강도 분석
+    enabled: true # 체결강도 지표
   whaleDetection:
     enabled: false # 고래 감지
 ```
@@ -391,27 +362,13 @@ kafka:
    # http://localhost:8081/#/jobs
    ```
 
-4. **Spring Boot 웹 서버가 시작되지 않는 문제**
+4. **Flink Job이 뜨지 않는 문제**
 
-   **증상**: Flink Job은 실행되지만 8082 포트에 웹 서버가 바인딩되지 않음
+   **증상**: 기동 로그에 `켜진 파이프라인이 없어 Flink Job 을 시작하지 않습니다`가 찍힘
 
-   **원인**: Flink Job의 `env.execute()`가 메인 스레드를 블로킹
+   **원인**: `jobs.*.enabled`가 모두 false
 
-   **해결**: `CompletableFuture.runAsync()`를 사용하여 별도 스레드에서 Flink Job 실행
-
-   ```bash
-   # 애플리케이션 재시작
-   pkill -f "CryptoFlinkApplication"
-   ./gradlew bootRun
-   ```
-
-5. **Swagger UI 접속 불가**
-
-   **증상**: Swagger UI 페이지가 로드되지 않음
-
-   **원인**: Spring Boot 웹 서버가 완전히 시작되지 않음
-
-   **해결**: 위의 Flink Job 블로킹 문제 해결 후 재시작
+   **해결**: 하나 이상 켜고 재시작. Job은 `FlinkJobRunner`가 비동기로 띄우므로 웹 서버를 막지 않는다
 
 ## 📝 개발 가이드
 

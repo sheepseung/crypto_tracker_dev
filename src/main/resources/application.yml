@@ -7,14 +7,10 @@ spring:
   profiles:
     active: dev
 
-# Job 실행 플래그
+# 파이프라인 실행 플래그. 켜진 파이프라인을 모두 붙여 Flink Job 하나로 띄운다
 jobs:
-  rawLogger:
-    enabled: true
-  cryptoStreaming:
-    enabled: false
   tradeIntensity:
-    enabled: false
+    enabled: true
   whaleDetection:
     enabled: false
 
