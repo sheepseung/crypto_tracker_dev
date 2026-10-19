@@ -126,7 +126,7 @@
 
 ### 5.1 김치 프리미엄 (Flink 밖)
 
-업비트 마지막 체결가(`UpbitLastPriceStore`, 원본 토픽을 latest 부터 읽음), 바이낸스 USDT 최신가(`BinancePriceFeed`, Java 11 `HttpClient` WebSocket 으로 miniTicker 구독, 끊기면 백오프 재접속), 환율(`ExchangeRateFeed`, 10분마다 두나무 → er-api)을 `KimchiPremiumService`가 5초마다 합친다. 셋 다 느리게 바뀌는 값의 결합이라 스트림 조인이 필요 없다. 한쪽이 2분 넘게 멈추면 그 종목은 건너뛴다. 멈춘 가격으로 계산하면 괴리율이 거짓으로 커지기 때문이다. 임계치 초과는 `KIMCHI_PREMIUM` 이벤트로 저장소에 직접 넣고 SSE 로 전파한다(Kafka events 토픽은 거치지 않는다).
+업비트 마지막 체결가(`UpbitLastPriceStore`, 원본 토픽을 latest 부터 읽음), 바이낸스 USDT 최신가(`BinancePriceFeed`, Java 11 `HttpClient` WebSocket 으로 miniTicker 구독, 끊기면 백오프 재접속), 환율(`ExchangeRateFeed`, 10분마다 두나무 → er-api)을 `KimchiPremiumService`가 5초마다 합친다. 셋 다 느리게 바뀌는 값의 결합이라 스트림 조인이 필요 없다. 한쪽이 10분 넘게 멈추면 그 종목은 건너뛴다. 멈춘 가격으로 계산하면 괴리율이 거짓으로 커지기 때문이다. 임계치 초과는 `KIMCHI_PREMIUM` 이벤트로 저장소에 직접 넣고 SSE 로 전파한다(Kafka events 토픽은 거치지 않는다).
 
 ### 5.2 호가 쏠림 (Flink 밖)
 

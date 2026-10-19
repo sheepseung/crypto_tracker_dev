@@ -23,8 +23,9 @@ import java.util.concurrent.ConcurrentHashMap;
 public class KimchiPremiumService {
 
     private static final Logger logger = LoggerFactory.getLogger(KimchiPremiumService.class);
-    // 이 시간보다 오래된 가격으로는 계산하지 않는다. 한쪽이 멈추면 괴리율이 거짓으로 커진다
-    private static final long MAX_PRICE_AGE_MILLIS = 120_000;
+    // 이 시간보다 오래된 가격으로는 계산하지 않는다. 한쪽이 멈추면 괴리율이 거짓으로 커진다.
+    // DOGE 처럼 체결이 몇 분씩 끊기는 종목이 빠지지 않도록 10분으로 둔다
+    private static final long MAX_PRICE_AGE_MILLIS = 600_000;
 
     private final boolean enabled;
     private final List<String> codes;

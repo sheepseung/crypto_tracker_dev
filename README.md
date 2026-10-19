@@ -276,7 +276,7 @@ detection:
 
 ### 2-1. 김치 프리미엄 (KimchiPremiumService)
 
-업비트 마지막 체결가 ÷ (바이낸스 USDT 최신가 × USD/KRW) − 1 을 종목별로 5초마다 계산해 `GET /api/premium`과 대시보드에 보여준다. Flink를 거치지 않고 Spring에서 계산한다. 바이낸스는 공개 WebSocket miniTicker(키 불필요), 환율은 두나무 공개 환율을 먼저 쓰고 안 되면 open.er-api.com 으로 대신한다. 한쪽 가격이 2분 넘게 안 오면 그 종목은 계산하지 않는다. 괴리율 절댓값이 5% 이상이면 `KIMCHI_PREMIUM` 이벤트를 이력에 남긴다(종목별 30분 간격).
+업비트 마지막 체결가 ÷ (바이낸스 USDT 최신가 × USD/KRW) − 1 을 종목별로 5초마다 계산해 `GET /api/premium`과 대시보드에 보여준다. Flink를 거치지 않고 Spring에서 계산한다. 바이낸스는 공개 WebSocket miniTicker(키 불필요), 환율은 두나무 공개 환율을 먼저 쓰고 안 되면 open.er-api.com 으로 대신한다. 한쪽 가격이 10분 넘게 안 오면 그 종목은 계산하지 않는다. 괴리율 절댓값이 5% 이상이면 `KIMCHI_PREMIUM` 이벤트를 이력에 남긴다(종목별 30분 간격).
 
 ```yaml
 premium:

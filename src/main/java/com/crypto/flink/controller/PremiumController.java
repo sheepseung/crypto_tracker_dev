@@ -22,7 +22,7 @@ public class PremiumController {
     }
 
     @GetMapping
-    @Operation(summary = "종목별 김치 프리미엄 최신 값", description = "한쪽 가격이 2분 넘게 안 오면 그 종목은 빠진다")
+    @Operation(summary = "종목별 김치 프리미엄 최신 값", description = "한쪽 가격이 10분 넘게 안 오면 그 종목은 빠진다")
     public List<KimchiPremium> current() {
         return service.current();
     }
