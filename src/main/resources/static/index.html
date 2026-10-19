@@ -547,16 +547,21 @@
   async function loadEvents() {
     try { events = await (await fetch('/api/events?limit=' + MAX_EVENTS)).json(); renderEvents(); } catch (e) { /* 다음 주기에 */ }
   }
-  // 카드는 SSE snapshot 으로 채우는데, Cloudflare 터널이 SSE 첫 응답을 20초 넘게 붙잡는다.
-  // 그동안 카드가 비지 않도록 같은 내용을 HTTP 로 먼저 가져온다. SSE 가 먼저 왔으면 그쪽이 최신이라 덮지 않는다
+  // Cloudflare 빠른 터널은 SSE 응답을 연결 뒤 약 60초 동안 128KB 단위로 묶어 보낸다(첫 도착 약 25초).
+  // 그 사이 화면이 멈추지 않도록 같은 내용을 HTTP 로도 가져온다. 시각이 더 최신인 쪽만 남긴다
   async function loadSnapshot() {
     const get = url => fetch(url).then(r => r.json()).catch(() => []);
     const [ms, ps, os] = await Promise.all([get('/api/intensity'), get('/api/premium'), get('/api/orderbook')]);
     ms.forEach(putMetric);
-    ps.forEach(p => { if (!premiums.has(p.code)) premiums.set(p.code, p); });
-    os.forEach(o => { if (!orderbooks.has(o.code)) orderbooks.set(o.code, o); });
+    ps.forEach(p => putNewer(premiums, p, 'updatedAt'));
+    os.forEach(o => putNewer(orderbooks, o, 'timestamp'));
     renderCards(); renderRows(); renderQuotes(); renderTierBreakdown();
   }
+  function putNewer(map, item, ts) { const cur = map.get(item.code); if (!cur || (item[ts] || 0) >= (cur[ts] || 0)) map.set(item.code, item); }
+  // SSE 로 데이터가 10초 넘게 안 오면 폴링으로 메운다. 터널 유예 구간과 재연결 중 모두 해당한다
+  let lastSseAt = 0;
+  const SSE_STALE_MILLIS = 10 * 1000;
+  function pollIfStale() { if (Date.now() - lastSseAt > SSE_STALE_MILLIS) loadSnapshot(); }
 
   /* ---------- 성적표 ---------- */
   let scoreDays = 7;
@@ -616,11 +621,13 @@
     const es = new EventSource('/api/stream');
     es.onopen = () => setStatus(true, '실시간');
     es.onerror = () => setStatus(false, '재연결 중');
+    ['snapshot', 'metric', 'premium', 'orderbook', 'event'].forEach(n => es.addEventListener(n, () => { lastSseAt = Date.now(); }));
     es.addEventListener('snapshot', ev => {
       const s = JSON.parse(ev.data);
-      metrics.clear(); s.metrics.forEach(putMetric);
-      premiums.clear(); (s.premiums || []).forEach(p => premiums.set(p.code, p));
-      orderbooks.clear(); (s.orderbooks || []).forEach(o => orderbooks.set(o.code, o));
+      // 터널을 거치면 snapshot 이 폴링으로 받은 값보다 늦게 올 수 있어 더 최신인 쪽만 남긴다
+      s.metrics.forEach(putMetric);
+      (s.premiums || []).forEach(p => putNewer(premiums, p, 'updatedAt'));
+      (s.orderbooks || []).forEach(o => putNewer(orderbooks, o, 'timestamp'));
       events = s.events || [];
       renderCards(); renderRows(); renderQuotes(); renderEvents(); renderTierBreakdown();
     });
@@ -636,6 +643,7 @@
   renderTierControls();
   renderCards(); renderRows(); renderQuotes(); renderEvents();
   loadSnapshot(); loadEvents();
+  setInterval(pollIfStale, 5 * 1000);
   setInterval(() => { loadEvents(); loadScorecard(); }, 60 * 1000);
   showView(['flow', 'events', 'metrics', 'summary'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'flow');
   loadSummary(); setInterval(loadSummary, 5 * 60 * 1000); setInterval(loadCharts, 60 * 1000);
