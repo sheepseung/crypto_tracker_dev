@@ -130,7 +130,42 @@
   .when { color: var(--faint); font-size: 11.5px; white-space: nowrap; padding-top: 2px; }
   .empty-row { color: var(--faint); text-align: center !important; padding: 26px 0 !important; }
   .foot { color: var(--faint); font-size: 11.5px; margin: 10px 0 0; }
-  @media (max-width: 1024px) { .cards, .row-2, .row-eq { grid-template-columns: 1fr; } nav.tabs { overflow-x: auto; } }
+  /* 표는 패널 안에서만 가로 스크롤한다. 페이지 전체가 밀리면 모바일에서 레이아웃이 깨진다.
+     그리드 자식은 기본 min-width:auto 라 넓은 표가 패널·그리드를 통째로 늘리므로 0 으로 막는다 */
+  .tbl { overflow-x: auto; -webkit-overflow-scrolling: touch; margin: 0 -4px; padding: 0 4px; min-width: 0; }
+  main, .view, .panel, .card, .row-2 > *, .row-eq > *, .cards > *, .chart { min-width: 0; }
+  @media (max-width: 1024px) {
+    .cards, .row-2, .row-eq { grid-template-columns: 1fr; }
+    nav.tabs { overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+    nav.tabs button { white-space: nowrap; }
+    .row-2 > .panel .chart.fill { min-height: 260px; }
+  }
+  @media (max-width: 640px) {
+    html, body { overflow-x: hidden; }
+    header { padding: 10px 14px; gap: 8px; }
+    header .sub-title { display: none; }
+    header .right { gap: 6px; }
+    .chip { padding: 4px 8px; font-size: 11px; }
+    main { padding: 14px 14px 36px; gap: 14px; }
+    .card { padding: 16px 16px 14px; gap: 12px; }
+    .card .price b { font-size: 18px; }
+    .card .main .value { font-size: 28px; }
+    .card .stats { gap: 8px 6px; }
+    .card .stats .v { font-size: 13px; }
+    .card .stats .label { font-size: 10.5px; }
+    .pctl { font-size: 10px; padding: 1px 5px; }
+    nav.tabs button { font-size: 14px; padding: 9px 10px; }
+    .panel { padding: 14px 14px 12px; border-radius: 16px; }
+    .panel h2 { font-size: 13px; gap: 8px; }
+    .panel h2 .hint { display: none; }
+    .seg button { padding: 3px 8px; font-size: 11.5px; }
+    .chart, .chart.tall { height: 220px; }
+    th, td { padding: 8px 6px; font-size: 12.5px; }
+    #events li, #events-mini li { gap: 8px; }
+    .msg { font-size: 12.5px; }
+    .when { font-size: 10.5px; }
+    .legend { font-size: 11px; gap: 8px; }
+  }
 </style>
 </head>
 <body>
@@ -154,7 +189,7 @@
 </svg>
 <header>
   <h1>Crypto Tracker</h1>
-  <span class="muted" style="font-size:12px">업비트 체결 흐름 · BTC / ETH / DOGE</span>
+  <span class="muted sub-title" style="font-size:12px">업비트 체결 흐름 · BTC / ETH / DOGE</span>
   <div class="right">
     <span class="chip"><svg class="ic"><use href="#i-wallet"/></svg><span id="fx">환율 대기</span></span>
     <span class="chip off" id="status"><span class="dot"></span><span>연결 중</span></span>
@@ -198,10 +233,10 @@
   <section class="view" id="view-events">
     <div class="panel">
       <h2><svg class="ic"><use href="#i-scale"/></svg>신호 성적표 <span class="seg" id="scoreDays"></span><span class="hint">이벤트 뒤 가격 변화. 적중 = 기대 방향과 같은 부호</span></h2>
-      <table>
+      <div class="tbl"><table>
         <thead><tr><th>신호</th><th>건수</th><th>5분 평균</th><th>15분 평균</th><th>60분 평균</th><th>적중률 15분</th><th>적중률 60분</th></tr></thead>
         <tbody id="scorerows"></tbody>
-      </table>
+      </table></div>
       <p class="foot">방향이 없는 신호(거래량 급증·김프)는 적중률 대신 평균 변동폭(절댓값)을 보여 준다. 성적은 이벤트 5분 뒤부터 차례로 채워진다.</p>
     </div>
     <div class="panel">
@@ -216,36 +251,36 @@
       <div class="panel">
         <h2><svg class="ic"><use href="#i-layers"/></svg>주체별 매수·매도 <span class="seg" id="tierBdCoin"></span> <span class="seg" id="tierBdWin"></span><span class="hint">체결 한 건 금액으로 나눈 구간</span></h2>
         <div class="chart" style="height:220px"><canvas id="tierBarChart"></canvas></div>
-        <table>
+        <div class="tbl"><table>
           <thead><tr><th>구간</th><th>매수</th><th>매도</th><th>순매수</th><th>건수</th><th>매수 비율</th></tr></thead>
           <tbody id="tierrows"></tbody>
-        </table>
+        </table></div>
         <p class="foot">막대는 왼쪽이 매도, 오른쪽이 매수. 어느 주체가 밀고 어느 주체가 받는지 한눈에 보인다. 업비트는 전체 합계만 준다.</p>
       </div>
       <div class="panel">
         <h2><svg class="ic"><use href="#i-globe"/></svg>시세 · 호가 <span class="hint">김프 = 업비트 ÷ 바이낸스 환산 − 1</span></h2>
-        <table>
+        <div class="tbl"><table>
           <thead><tr><th>종목</th><th>바이낸스 환산</th><th>김프</th><th>매수÷매도 잔량</th><th>매수벽</th><th>매도벽</th></tr></thead>
           <tbody id="quotes"></tbody>
-        </table>
+        </table></div>
         <p class="foot">호가 비율이 3배 이상으로 10초 이어지면 이벤트. 벽은 다른 호가 평균의 5배 넘는 잔량(5천만 원 이상)이고, 가격이 닿기 전에 사라지면 허수 벽, 최우선에서 소진되면 벽 뚫김으로 남는다.</p>
       </div>
     </div>
     <div class="row-2">
       <div class="panel">
         <h2><svg class="ic"><use href="#i-bars"/></svg>체결강도 <span class="seg" id="tabs"></span> <span class="right" id="updated"></span></h2>
-        <table>
+        <div class="tbl"><table>
           <thead><tr><th>종목</th><th>체결강도</th><th>매수 비율</th><th>순매수</th><th>거래대금</th><th>체결</th><th>기준</th></tr></thead>
           <tbody id="rows"></tbody>
-        </table>
+        </table></div>
         <p class="foot">체결강도 = 매수 금액 ÷ 매도 금액 × 100. 100보다 크면 매수 우위. 5초마다 갱신.</p>
       </div>
       <div class="panel">
         <h2><svg class="ic"><use href="#i-trend"/></svg>구간 요약 <span class="hint">주체 구간 경계</span></h2>
-        <table>
+        <div class="tbl"><table>
           <thead><tr><th>구간</th><th>체결 한 건 금액</th></tr></thead>
           <tbody id="tierspec"></tbody>
-        </table>
+        </table></div>
         <p class="foot">경계는 서버 설정 <code>tiers.bounds</code>에서 바꾼다. 바꾸면 그 이후 버킷부터 새 구간으로 쌓인다.</p>
       </div>
     </div>
@@ -254,10 +289,10 @@
   <section class="view" id="view-summary">
     <div class="panel">
       <h2><svg class="ic"><use href="#i-calendar"/></svg>일별 요약 <span class="seg" id="daytabs"></span> <span class="right" id="daynote"></span></h2>
-      <table>
+      <div class="tbl"><table>
         <thead><tr><th>종목</th><th>매수</th><th>매도</th><th>순매수</th><th>거래대금</th><th>체결강도</th><th>체결</th><th>수집</th></tr></thead>
         <tbody id="summaryrows"></tbody>
-      </table>
+      </table></div>
       <p class="foot" id="summaryevents"></p>
     </div>
   </section>
