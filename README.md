@@ -273,6 +273,17 @@ detection:
 {"type":"PRICE_SURGE","code":"KRW-DOGE","eventTime":1718000200000,"eventTimeAt":"2024-06-10T15:03:20+09:00","price":204.1,"priceFrom":200.0,"priceTo":204.1,"changePercent":2.05,"windowSeconds":300,"message":"KRW-DOGE 5분 내 +2.05% (200원 → 204원)"}
 ```
 
+### 2-1. 김치 프리미엄 (KimchiPremiumService)
+
+업비트 마지막 체결가 ÷ (바이낸스 USDT 최신가 × USD/KRW) − 1 을 종목별로 5초마다 계산해 `GET /api/premium`과 대시보드에 보여준다. Flink를 거치지 않고 Spring에서 계산한다. 바이낸스는 공개 WebSocket miniTicker(키 불필요), 환율은 두나무 공개 환율을 먼저 쓰고 안 되면 open.er-api.com 으로 대신한다. 한쪽 가격이 2분 넘게 안 오면 그 종목은 계산하지 않는다. 괴리율 절댓값이 5% 이상이면 `KIMCHI_PREMIUM` 이벤트를 이력에 남긴다(종목별 30분 간격).
+
+```yaml
+premium:
+  codes: KRW-BTC,KRW-ETH,KRW-DOGE
+  threshold-percent: 5.0
+  cooldown-seconds: 1800
+```
+
 ### 3. 조회 API (ResultConsumer → MetricsStore · PostgreSQL)
 
 Spring이 `crypto-metrics`와 `crypto-events`를 소비해 체결강도는 메모리에 최신 값만, 감지 이벤트는 PostgreSQL `detection_event` 테이블에 담는다. API는 Flink 상태를 직접 읽지 않고 이 저장소만 본다. 같은 이벤트가 다시 와도 `(type, code, event_time)` 고유 제약으로 한 번만 남는다.
@@ -281,6 +292,7 @@ Spring이 `crypto-metrics`와 `crypto-events`를 소비해 체결강도는 메�
 GET /api/intensity?window=300&sort=netAmount   # 구간별 전 종목 체결강도. window: 60|300|900, sort: netAmount|intensity|totalAmount|code
 GET /api/intensity/{code}                      # 한 종목의 모든 구간. 지표가 아직 없으면 404
 GET /api/events?code=&type=&since=&limit=50    # 감지 이벤트 최신순. since: ISO-8601 또는 epoch ms (기본 최근 24시간)
+GET /api/premium                               # 종목별 김치 프리미엄 최신 값
 ```
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html

@@ -2,6 +2,8 @@ package com.crypto.flink.controller;
 
 import com.crypto.flink.dto.DetectionEvent;
 import com.crypto.flink.dto.TradeIntensity;
+import com.crypto.flink.premium.KimchiPremium;
+import com.crypto.flink.premium.KimchiPremiumService;
 import com.crypto.flink.store.DetectionEventRepository;
 import com.crypto.flink.store.MetricsStore;
 import com.crypto.flink.stream.StreamBroadcaster;
@@ -26,12 +28,14 @@ public class StreamController {
     private final StreamBroadcaster broadcaster;
     private final MetricsStore metricsStore;
     private final DetectionEventRepository eventRepository;
+    private final KimchiPremiumService premiumService;
 
     public StreamController(StreamBroadcaster broadcaster, MetricsStore metricsStore,
-            DetectionEventRepository eventRepository) {
+            DetectionEventRepository eventRepository, KimchiPremiumService premiumService) {
         this.broadcaster = broadcaster;
         this.metricsStore = metricsStore;
         this.eventRepository = eventRepository;
+        this.premiumService = premiumService;
     }
 
     @GetMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
@@ -40,7 +44,8 @@ public class StreamController {
         SseEmitter emitter = broadcaster.subscribe();
         List<TradeIntensity> metrics = metricsStore.all();
         List<DetectionEvent> events = eventRepository.find(null, null, null, SNAPSHOT_EVENTS);
-        broadcaster.sendSnapshot(emitter, Map.of("metrics", metrics, "events", events));
+        List<KimchiPremium> premiums = premiumService.current();
+        broadcaster.sendSnapshot(emitter, Map.of("metrics", metrics, "events", events, "premiums", premiums));
         return emitter;
     }
 }

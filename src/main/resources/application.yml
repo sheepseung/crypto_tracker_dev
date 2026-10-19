@@ -73,6 +73,16 @@ trade:
     windows-seconds: 60,300,900 # 집계 구간(초). 1분·5분·15분
     slide-seconds: 5 # 갱신 주기(초)
 
+# 김치 프리미엄 (Spring 에서 5초마다 계산, Flink 와 무관)
+premium:
+  enabled: true
+  codes: KRW-BTC,KRW-ETH,KRW-DOGE # 업비트 종목. 바이낸스 심볼은 KRW- 를 떼고 USDT 를 붙인다
+  binance-symbols: BTCUSDT,ETHUSDT,DOGEUSDT # 바이낸스 miniTicker 구독 심볼
+  refresh-seconds: 5 # 괴리율 계산 주기
+  fx-refresh-seconds: 600 # 환율 갱신 주기 (두나무 → 실패 시 open.er-api.com)
+  threshold-percent: 5.0 # 괴리율 절댓값이 이 이상이면 KIMCHI_PREMIUM 이벤트
+  cooldown-seconds: 1800 # 같은 종목 재감지 간격 (30분)
+
 # 로깅 설정
 logging:
   level:

@@ -39,6 +39,7 @@
   .badge.PRICE_SURGE { border-color: var(--buy); color: var(--buy); }
   .badge.PRICE_DROP { border-color: var(--sell); color: var(--sell); }
   .badge.VOLUME_SURGE { border-color: #a78bfa; color: #a78bfa; }
+  .badge.KIMCHI_PREMIUM { border-color: #34d399; color: #34d399; }
   .empty { color: var(--muted); padding: 16px 0; text-align: center; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
 </style>
@@ -59,8 +60,16 @@
     <p class="muted">체결강도 = 매수 금액 ÷ 매도 금액 × 100. 100보다 크면 매수 우위. 5초마다 갱신.</p>
   </section>
   <section>
-    <h2>감지 이벤트 <span class="muted">대량 체결 · 급등락 · 거래량 급증</span></h2>
+    <h2>감지 이벤트 <span class="muted">대량 체결 · 급등락 · 거래량 급증 · 김프</span></h2>
     <ul id="events"><li class="empty">아직 이벤트가 없습니다</li></ul>
+  </section>
+  <section>
+    <h2>김치 프리미엄 <span class="muted" id="fx"></span></h2>
+    <table>
+      <thead><tr><th>종목</th><th>업비트</th><th>바이낸스 (원화 환산)</th><th>프리미엄</th><th>갱신</th></tr></thead>
+      <tbody id="premiums"><tr><td colspan="5" class="empty">환율과 바이낸스 시세를 기다리는 중</td></tr></tbody>
+    </table>
+    <p class="muted">프리미엄 = 업비트가 ÷ (바이낸스 USDT가 × USD/KRW) − 1. 5초마다 갱신.</p>
   </section>
 </main>
 <script>
@@ -110,6 +119,24 @@
     if (!cur || m.windowEnd >= cur.windowEnd) metrics.set(key, m);
   }
 
+  const premiums = new Map();  // key: code
+
+  function renderPremiums() {
+    const rows = [...premiums.values()].sort((a, b) => b.premiumPercent - a.premiumPercent);
+    const body = document.getElementById('premiums');
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="empty">환율과 바이낸스 시세를 기다리는 중</td></tr>'; return; }
+    body.innerHTML = rows.map(p => `
+      <tr>
+        <td class="code">${p.code.replace('KRW-', '')}</td>
+        <td>${Math.round(p.upbitPrice).toLocaleString()}</td>
+        <td>${Math.round(p.globalPriceKrw).toLocaleString()}</td>
+        <td class="${p.premiumPercent >= 0 ? 'buy' : 'sell'}">${p.premiumPercent >= 0 ? '+' : ''}${p.premiumPercent.toFixed(2)}%</td>
+        <td class="muted">${fmtTime(p.updatedAtIso)}</td>
+      </tr>`).join('');
+    const any = rows[0];
+    document.getElementById('fx').textContent = `USD/KRW ${any.usdKrw.toLocaleString()} (${any.fxSource})`;
+  }
+
   function eventItem(e) {
     const li = document.createElement('li');
     li.innerHTML = `<div class="when">${e.eventTimeAt ? e.eventTimeAt.slice(0, 19).replace('T', ' ') : ''}</div>
@@ -143,8 +170,12 @@
       s.metrics.forEach(putMetric);
       renderRows();
       setEvents(s.events);
+      premiums.clear();
+      (s.premiums || []).forEach(p => premiums.set(p.code, p));
+      renderPremiums();
     });
     es.addEventListener('metric', ev => { putMetric(JSON.parse(ev.data)); renderRows(); });
+    es.addEventListener('premium', ev => { const p = JSON.parse(ev.data); premiums.set(p.code, p); renderPremiums(); });
     es.addEventListener('event', ev => prependEvent(JSON.parse(ev.data)));
   }
 

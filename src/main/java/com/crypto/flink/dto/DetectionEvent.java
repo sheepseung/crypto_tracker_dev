@@ -15,6 +15,7 @@ public class DetectionEvent {
     public static final String PRICE_SURGE = "PRICE_SURGE";
     public static final String PRICE_DROP = "PRICE_DROP";
     public static final String VOLUME_SURGE = "VOLUME_SURGE";
+    public static final String KIMCHI_PREMIUM = "KIMCHI_PREMIUM";
 
     private String type;
     private String code;
@@ -84,6 +85,20 @@ public class DetectionEvent {
         event.message = String.format("%s %d분 거래대금 %s, %d시간 평균(%s)의 %.1f배",
                 window.getCode(), window.getWindowSeconds() / 60, Krw.format(window.getTotalAmount()),
                 baselineHours, Krw.format(baselineAmount), event.ratio);
+        return event;
+    }
+
+    /** 김치 프리미엄: priceFrom 은 바이낸스가를 원화로 환산한 값, priceTo 는 업비트가, changePercent 는 괴리율. */
+    public static DetectionEvent kimchiPremium(com.crypto.flink.premium.KimchiPremium premium) {
+        DetectionEvent event = base(KIMCHI_PREMIUM, premium.code(), premium.updatedAt());
+        event.price = premium.upbitPrice();
+        event.priceFrom = premium.globalPriceKrw();
+        event.priceTo = premium.upbitPrice();
+        event.changePercent = premium.premiumPercent();
+        event.ratio = premium.usdKrw();
+        event.message = String.format("%s 김치 프리미엄 %s%.2f%% (업비트 %s / 바이낸스 %s, 환율 %,.0f)",
+                premium.code(), premium.premiumPercent() > 0 ? "+" : "", premium.premiumPercent(),
+                Krw.format(premium.upbitPrice()), Krw.format(premium.globalPriceKrw()), premium.usdKrw());
         return event;
     }
 

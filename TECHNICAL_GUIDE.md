@@ -40,6 +40,7 @@
 | `consumer` | 결과 토픽을 읽어 저장소에 넣음 | `ResultConsumer` |
 | `store` | 조회용 저장소 | `MetricsStore`(메모리), `DetectionEventRepository`(JDBC) |
 | `stream` | SSE 연결 관리 | `StreamBroadcaster` |
+| `premium` | 김치 프리미엄 (Flink 밖, Spring 스케줄) | `BinancePriceFeed`, `ExchangeRateFeed`, `UpbitLastPriceStore`, `KimchiPremiumService` |
 | `controller` | REST·SSE 엔드포인트 | `IntensityController`, `EventsController`, `RulesController`, `StreamController` |
 | `util` | 한국 시간 포맷 | `KstTime` |
 
@@ -118,6 +119,10 @@
 - `DetectionEventRepository`: `(type, code, event_time)` 고유 제약. 중복 삽입은 `DuplicateKeyException`을 잡아 false 로 돌린다. 스키마는 `schema.sql`이 기동마다 실행(`IF NOT EXISTS`, `ADD COLUMN IF NOT EXISTS`).
 - `StreamBroadcaster`: `SseEmitter` 목록. 연결 직후 `StreamController`가 `snapshot`(지표 전체 + 최근 이벤트 50건)을 보내고, 이후 `metric`·`event`. 15초마다 주석 하트비트. 보내다 실패하면 목록에서 뺀다.
 - `static/index.html`: 의존성 없는 한 장. `EventSource`가 끊기면 브라우저가 재접속하고 snapshot으로 다시 채운다.
+
+### 5.1 김치 프리미엄 (Flink 밖)
+
+업비트 마지막 체결가(`UpbitLastPriceStore`, 원본 토픽을 latest 부터 읽음), 바이낸스 USDT 최신가(`BinancePriceFeed`, Java 11 `HttpClient` WebSocket 으로 miniTicker 구독, 끊기면 백오프 재접속), 환율(`ExchangeRateFeed`, 10분마다 두나무 → er-api)을 `KimchiPremiumService`가 5초마다 합친다. 셋 다 느리게 바뀌는 값의 결합이라 스트림 조인이 필요 없다. 한쪽이 2분 넘게 멈추면 그 종목은 건너뛴다. 멈춘 가격으로 계산하면 괴리율이 거짓으로 커지기 때문이다. 임계치 초과는 `KIMCHI_PREMIUM` 이벤트로 저장소에 직접 넣고 SSE 로 전파한다(Kafka events 토픽은 거치지 않는다).
 
 ## 6. 감지 규칙과 Job 재시작
 

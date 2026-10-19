@@ -23,6 +23,7 @@ public class StreamBroadcaster {
     public static final String METRIC = "metric";
     public static final String EVENT = "event";
     public static final String SNAPSHOT = "snapshot";
+    public static final String PREMIUM = "premium";
 
     private static final Logger logger = LoggerFactory.getLogger(StreamBroadcaster.class);
     // 프록시나 브라우저가 조용한 연결을 끊지 않도록 주기적으로 빈 주석을 보낸다
@@ -50,6 +51,10 @@ public class StreamBroadcaster {
 
     public void publishEvent(DetectionEvent event) {
         broadcast(EVENT, event);
+    }
+
+    public void publishPremium(Object premium) {
+        broadcast(PREMIUM, premium);
     }
 
     public int subscriberCount() {
