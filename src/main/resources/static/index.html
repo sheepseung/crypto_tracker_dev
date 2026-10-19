@@ -208,7 +208,7 @@
 
   <section class="view active" id="view-flow">
     <div class="panel">
-      <h2><svg class="ic"><use href="#i-trend"/></svg>오늘 누적 순매수 <span class="hint">5분 버킷 합산 · 0시 기준</span><span class="right legend" id="cumLegend"></span></h2>
+      <h2><svg class="ic"><use href="#i-trend"/></svg>오늘 누적 순매수 <span class="hint" id="cumHint">5분 버킷 합산 · 0시 기준</span><span class="right legend" id="cumLegend"></span></h2>
       <div class="chart"><canvas id="cumChart"></canvas></div>
       <p class="foot">매수 체결 금액 − 매도 체결 금액을 하루 동안 더한 값. 위로 가면 돈이 들어오고, 아래로 가면 빠져나간다.</p>
     </div>
@@ -430,8 +430,8 @@
     const datasets = tierSpec.names.map((name, i) => ({ label: name, data: live.map(p => ({ x: p.t, y: p.cumulativeTierNet[i] })), borderColor: TIER_COLORS[i], backgroundColor: TIER_COLORS[i], borderWidth: i === 0 || i === n - 1 ? 2.5 : 1.5, pointRadius: sparse ? 4 : 0, tension: 0.25 }));
     document.getElementById('tierLegend').innerHTML = tierSpec.names.map((name, i) => `<span><i style="background:${TIER_COLORS[i]}"></i>${name}</span>`).join('');
     if (sparse) note.textContent = `주체별 버킷이 ${live.length}개뿐이에요. 5분마다 한 점씩 쌓이면 선이 이어져요.`;
-    // 점이 적을 땐 첫 점부터, 충분하면 0시부터 그린다
-    const opts = baseOptions(v => fmtKrw(v), sparse ? live[0].t - 30 * 60e3 : kstDayStart(), Date.now());
+    // 주체 값이 있는 첫 버킷부터 그린다. 0시부터 그리면 그 전 빈 구간 때문에 데이터가 오른쪽에 구겨진다
+    const opts = baseOptions(v => fmtKrw(v), Math.max(kstDayStart(), live[0].t - (sparse ? 30 : 5) * 60e3), Date.now());
     opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => ` ${i.dataset.label} ${signed(i.parsed.y)}` };
     const data = { datasets };
     if (!tierChart) tierChart = new Chart(document.getElementById('tierChart'), { type: 'line', data, options: opts, plugins: [zeroLinePlugin] });
@@ -442,9 +442,12 @@
     const sparse = Math.max(0, ...codesSorted.map(c => byCode[c].length)) < 3;
     const datasets = codesSorted.map(code => ({ label: sym(code), data: byCode[code].map(p => ({ x: p.t, y: p.cumulativeNet })), borderColor: COLORS[code] || '#8b95a1', backgroundColor: COLORS[code] || '#8b95a1', borderWidth: 2, pointRadius: sparse ? 4 : 0, tension: 0.25 }));
     document.getElementById('cumLegend').innerHTML = codesSorted.map(c => `<span><i style="background:${COLORS[c] || '#8b95a1'}"></i>${sym(c)}</span>`).join('');
-    const opts = baseOptions(v => fmtKrw(v), kstDayStart(), Date.now());
+    // 수집이 0시 이후에 시작된 날은 첫 버킷부터 그린다. 0시부터 그리면 데이터가 오른쪽에 구겨진다
+    const firstT = Math.min(...codesSorted.map(c => byCode[c][0].t));
+    const fromMidnight = firstT - kstDayStart() < 10 * 60e3;
+    document.getElementById('cumHint').textContent = fromMidnight ? '5분 버킷 합산 · 0시 기준' : `5분 버킷 합산 · ${hhmm(firstT)} 수집 시작`;
+    const opts = baseOptions(v => fmtKrw(v), Math.max(kstDayStart(), firstT - 5 * 60e3), Date.now());
     opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => ` ${i.dataset.label} ${signed(i.parsed.y)}` };
-    opts.plugins.zeroLine = true;
     const data = { datasets };
     if (!cumChart) cumChart = new Chart(document.getElementById('cumChart'), { type: 'line', data, options: opts, plugins: [zeroLinePlugin] });
     else { cumChart.data = data; cumChart.update('none'); }
