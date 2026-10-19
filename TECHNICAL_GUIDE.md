@@ -41,7 +41,7 @@
 | `store` | 조회용 저장소 | `MetricsStore`(메모리), `DetectionEventRepository`(JDBC) |
 | `stream` | SSE 연결 관리 | `StreamBroadcaster` |
 | `premium` | 김치 프리미엄 (Flink 밖, Spring 스케줄) | `BinancePriceFeed`, `ExchangeRateFeed`, `UpbitLastPriceStore`, `KimchiPremiumService` |
-| `orderbook` | 호가 쏠림 (Flink 밖, 호가 토픽 소비) | `Orderbook`, `OrderbookImbalance`, `ImbalanceDetector`, `OrderbookService` |
+| `orderbook` | 호가 쏠림·벽 추적 (Flink 밖, 호가 토픽 소비) | `Orderbook`, `OrderbookImbalance`, `ImbalanceDetector`, `WallTracker`, `OrderbookService` |
 | `summary` | 일별 요약 (5분 버킷·이벤트 이력 집계, 00:05 스케줄) | `DailySummary`, `DailySummaryService` |
 | `context` | 평소 대비 백분위 (7일 5분 버킷 분포) | `ContextService` |
 | `scorecard` | 신호 성적표 (가격 틱 기록, 이벤트 뒤 수익률 채움, 집계) | `OutcomeFiller`, `ScorecardService` |
@@ -136,6 +136,8 @@
 ### 5.2 호가 쏠림 (Flink 밖)
 
 `OrderbookService`가 `crypto-orderbook`을 latest 부터 읽어 종목별 `OrderbookImbalance`(총 매수÷매도 잔량, 상위 N호가 금액, 스프레드)를 유지한다. 호가는 상태 스냅샷이라 윈도우 집계가 필요 없다. 대시보드에는 종목당 1초에 한 번만 보낸다. `ImbalanceDetector`는 쏠림이 `hold-seconds` 동안 끊기지 않고 이어졌을 때 한 번 `ORDERBOOK_IMBALANCE`를 내고 종목·방향별 쿨다운을 둔다. 순간값은 노이즈라서다. 상태는 메모리뿐이고 Kafka 리스너 스레드 하나에서만 쓰므로 동기화하지 않는다.
+
+`WallTracker`는 같은 스냅샷 흐름에서 `(종목, 방향, 가격)`별 벽의 첫 등장·최대 잔량·마지막 관측을 들고 있다. 벽 기준은 절대 금액과 "같은 쪽 다른 호가 평균 대비 배수"를 함께 써 종목 규모와 무관하게 동작한다. 사라짐 판정은 잔량이 최대치의 `gone-ratio` 아래로 떨어질 때이고, 그 순간 최우선 호가였는지로 뚫김과 허수를 가른다. 성적표의 기대 방향은 매도벽 소멸=상승, 매수벽 소멸=하락이다.
 
 ### 5.3 신호 성적표 (Flink 밖)
 

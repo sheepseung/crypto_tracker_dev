@@ -60,6 +60,9 @@ public class ScorecardService {
             case DetectionEvent.LARGE_TRADE, DetectionEvent.LARGE_TRADE_BURST,
                  DetectionEvent.ORDERBOOK_IMBALANCE, DetectionEvent.TIER_DIVERGENCE ->
                     CryptoTrade.BID.equals(e.getSide()) ? 1 : CryptoTrade.ASK.equals(e.getSide()) ? -1 : 0;
+            // 매도벽이 뚫리거나 거짓으로 드러나면 위로, 매수벽이면 아래로 기대한다
+            case DetectionEvent.WALL_EATEN, DetectionEvent.WALL_PULLED ->
+                    CryptoTrade.ASK.equals(e.getSide()) ? 1 : CryptoTrade.BID.equals(e.getSide()) ? -1 : 0;
             default -> 0;
         };
     }

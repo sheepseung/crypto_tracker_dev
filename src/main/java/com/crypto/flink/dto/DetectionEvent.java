@@ -18,6 +18,8 @@ public class DetectionEvent {
     public static final String KIMCHI_PREMIUM = "KIMCHI_PREMIUM";
     public static final String ORDERBOOK_IMBALANCE = "ORDERBOOK_IMBALANCE";
     public static final String TIER_DIVERGENCE = "TIER_DIVERGENCE";
+    public static final String WALL_PULLED = "WALL_PULLED";
+    public static final String WALL_EATEN = "WALL_EATEN";
 
     private String type;
     private String code;
@@ -140,6 +142,25 @@ public class DetectionEvent {
                 w.getCode(), w.getWindowSeconds() / 60,
                 whaleBuys ? "매수" : "매도", Krw.format(Math.abs(w.getWhaleNetAmount())), Math.abs(whaleLean) * 100,
                 whaleBuys ? "매도" : "매수", Krw.format(Math.abs(w.getRetailNetAmount())), Math.abs(retailLean) * 100);
+        return event;
+    }
+
+    /** 호가 벽: price 는 벽 가격, amount 는 벽 최대 금액, windowSeconds 는 벽이 산 시간, changePercent 는 최우선 호가와의 거리. */
+    public static DetectionEvent wall(String type, String code, com.crypto.flink.orderbook.WallTracker.Wall wall,
+            double bestPrice, long now) {
+        boolean bid = CryptoTrade.BID.equals(wall.side());
+        DetectionEvent event = base(type, code, now);
+        event.side = wall.side();
+        event.price = wall.price();
+        event.amount = wall.maxAmount();
+        event.windowSeconds = (int) (wall.ageMillis(now) / 1000);
+        event.changePercent = bestPrice > 0 ? (wall.price() - bestPrice) / bestPrice * 100.0 : null;
+        String what = bid ? "매수벽" : "매도벽";
+        event.message = WALL_EATEN.equals(type)
+                ? String.format("%s %s %s 뚫림: %s 에 %d초 버티다 체결로 소진", code, what, Krw.format(wall.maxAmount()),
+                        Krw.format(wall.price()), event.windowSeconds)
+                : String.format("%s 허수 %s %s: %s 에 %d초 있다가 가격이 닿기 전 사라짐", code, what, Krw.format(wall.maxAmount()),
+                        Krw.format(wall.price()), event.windowSeconds);
         return event;
     }
 

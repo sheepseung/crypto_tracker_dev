@@ -1,5 +1,6 @@
 package com.crypto.flink.orderbook;
 
+import com.crypto.flink.dto.DetectionEvent;
 import com.crypto.flink.store.DetectionEventRepository;
 import com.crypto.flink.stream.StreamBroadcaster;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -16,8 +17,8 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * F9 호가 불균형. 호가 토픽을 최신 위치부터 읽어 종목별 쏠림 스냅샷을 유지하고, 오래 이어지는 쏠림을 이벤트로 남긴다.
- * 호가는 상태 스냅샷이라 윈도우 집계가 필요 없어 Flink 를 거치지 않는다.
+ * F9 호가 불균형과 G3 호가 벽 추적. 호가 토픽을 최신 위치부터 읽어 종목별 쏠림 스냅샷과 벽을 유지하고,
+ * 오래 이어지는 쏠림과 벽의 소멸을 이벤트로 남긴다. 호가는 상태 스냅샷이라 윈도우 집계가 필요 없어 Flink 를 거치지 않는다.
  */
 @Service
 public class OrderbookService {
@@ -29,6 +30,7 @@ public class OrderbookService {
     private final ObjectMapper objectMapper;
     private final int topLevels;
     private final ImbalanceDetector detector;
+    private final WallTracker walls;
     private final DetectionEventRepository eventRepository;
     private final StreamBroadcaster broadcaster;
 
@@ -40,10 +42,16 @@ public class OrderbookService {
             @Value("${orderbook.threshold-ratio:3.0}") double thresholdRatio,
             @Value("${orderbook.hold-seconds:10}") int holdSeconds,
             @Value("${orderbook.cooldown-seconds:600}") int cooldownSeconds,
+            @Value("${orderbook.wall.min-amount:50000000}") double wallMinAmount,
+            @Value("${orderbook.wall.ratio:5.0}") double wallRatio,
+            @Value("${orderbook.wall.min-lifetime-seconds:30}") int wallMinLifetimeSeconds,
+            @Value("${orderbook.wall.gone-ratio:0.2}") double wallGoneRatio,
+            @Value("${orderbook.wall.cooldown-seconds:300}") int wallCooldownSeconds,
             DetectionEventRepository eventRepository, StreamBroadcaster broadcaster) {
         this.objectMapper = objectMapper;
         this.topLevels = topLevels;
         this.detector = new ImbalanceDetector(thresholdRatio, holdSeconds, cooldownSeconds);
+        this.walls = new WallTracker(wallMinAmount, wallRatio, wallMinLifetimeSeconds, wallGoneRatio, wallCooldownSeconds);
         this.eventRepository = eventRepository;
         this.broadcaster = broadcaster;
     }
@@ -65,15 +73,19 @@ public class OrderbookService {
         if (book.code == null || !"orderbook".equals(book.type)) {
             return;
         }
-        OrderbookImbalance snapshot = OrderbookImbalance.of(book, topLevels);
+        List<DetectionEvent> wallEvents = walls.onSnapshot(book);
+        OrderbookImbalance snapshot = OrderbookImbalance.of(book, topLevels).withWalls(walls);
         latest.put(snapshot.code(), snapshot);
         broadcastThrottled(snapshot);
-        detector.onSnapshot(snapshot).ifPresent(event -> {
-            if (eventRepository.save(event)) {
-                logger.info("감지 이벤트: {}", event.getMessage());
-                broadcaster.publishEvent(event);
-            }
-        });
+        detector.onSnapshot(snapshot).ifPresent(this::emit);
+        wallEvents.forEach(this::emit);
+    }
+
+    private void emit(DetectionEvent event) {
+        if (eventRepository.save(event)) {
+            logger.info("감지 이벤트: {}", event.getMessage());
+            broadcaster.publishEvent(event);
+        }
     }
 
     private void broadcastThrottled(OrderbookImbalance snapshot) {

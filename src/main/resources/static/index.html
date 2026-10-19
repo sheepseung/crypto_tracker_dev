@@ -105,6 +105,8 @@
   .badge.ORDERBOOK_IMBALANCE { color: #c25a10; background: #fdebdd; }
   .badge.TIER_DIVERGENCE { color: #0f6e8a; background: #e2f3f8; }
   .evic.TIER_DIVERGENCE { background: #e2f3f8; color: #0f6e8a; }
+  .badge.WALL_PULLED, .evic.WALL_PULLED { color: #7a5c00; background: #fbf3d6; }
+  .badge.WALL_EATEN, .evic.WALL_EATEN { color: #8a1f5c; background: #fae3ef; }
   .pctl { display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 6px; background: var(--line-2); color: var(--sub); }
   .pctl.hot { background: var(--red-soft); color: var(--red); }
   .pctl.cold { background: var(--blue-soft); color: var(--blue); }
@@ -216,10 +218,10 @@
       <div class="panel">
         <h2><svg class="ic"><use href="#i-globe"/></svg>시세 · 호가 <span class="hint">김프 = 업비트 ÷ 바이낸스 환산 − 1</span></h2>
         <table>
-          <thead><tr><th>종목</th><th>바이낸스 환산</th><th>김프</th><th>매수÷매도 잔량</th><th>스프레드</th></tr></thead>
+          <thead><tr><th>종목</th><th>바이낸스 환산</th><th>김프</th><th>매수÷매도 잔량</th><th>매수벽</th><th>매도벽</th></tr></thead>
           <tbody id="quotes"></tbody>
         </table>
-        <p class="foot">호가 비율이 3배 이상으로 10초 이어지면 이벤트.</p>
+        <p class="foot">호가 비율이 3배 이상으로 10초 이어지면 이벤트. 벽은 다른 호가 평균의 5배 넘는 잔량(5천만 원 이상)이고, 가격이 닿기 전에 사라지면 허수 벽, 최우선에서 소진되면 벽 뚫김으로 남는다.</p>
       </div>
     </div>
   </section>
@@ -239,7 +241,7 @@
 <script>
   const ORDER = ['KRW-BTC', 'KRW-ETH', 'KRW-DOGE'];
   const COLORS = { 'KRW-BTC': '#f7931a', 'KRW-ETH': '#5b6ee1', 'KRW-DOGE': '#a6892a' };
-  const TYPES = { LARGE_TRADE: ['대량 체결', '#b95f00', 'coins'], LARGE_TRADE_BURST: ['집중 체결', '#b95f00', 'zap'], PRICE_SURGE: ['급등', '#f04452', 'up'], PRICE_DROP: ['급락', '#3182f6', 'down'], VOLUME_SURGE: ['거래량 급증', '#6d4fd0', 'activity'], KIMCHI_PREMIUM: ['김프', '#0f8a5f', 'globe'], ORDERBOOK_IMBALANCE: ['호가 쏠림', '#c25a10', 'scale'], TIER_DIVERGENCE: ['주체 엇갈림', '#0f6e8a', 'layers'] };
+  const TYPES = { LARGE_TRADE: ['대량 체결', '#b95f00', 'coins'], LARGE_TRADE_BURST: ['집중 체결', '#b95f00', 'zap'], PRICE_SURGE: ['급등', '#f04452', 'up'], PRICE_DROP: ['급락', '#3182f6', 'down'], VOLUME_SURGE: ['거래량 급증', '#6d4fd0', 'activity'], KIMCHI_PREMIUM: ['김프', '#0f8a5f', 'globe'], ORDERBOOK_IMBALANCE: ['호가 쏠림', '#c25a10', 'scale'], TIER_DIVERGENCE: ['주체 엇갈림', '#0f6e8a', 'layers'], WALL_PULLED: ['허수 벽', '#7a5c00', 'inbox'], WALL_EATEN: ['벽 뚫김', '#8a1f5c', 'zap'] };
   const TIERS = [['cumulativeWhaleNet', '고래 (1천만+)', '#ff8a00'], ['cumulativeMidNet', '중형', '#8b95a1'], ['cumulativeRetailNet', '개미 (10만 미만)', '#3182f6']];
   const contexts = new Map();   // code → 평소 대비 백분위
   // 백분위 → "상위 n%" 칩. 50 근처는 보통, 90 이상·10 이하는 색을 입힌다
@@ -409,6 +411,7 @@
     const latest = rows.reduce((t, m) => Math.max(t, m.windowEnd), 0);
     document.getElementById('updated').textContent = new Date(latest).toLocaleTimeString('ko-KR') + ' 갱신';
   }
+  const wallCell = (w, c) => w ? `<span class="${c}">${fmtKrw(w.amount)}</span><span class="faint" style="font-size:11px"> ${w.distancePercent >= 0 ? '+' : ''}${w.distancePercent.toFixed(2)}% · ${w.ageSeconds}초</span>` : '<span class="faint">—</span>';
   function renderQuotes() {
     const body = document.getElementById('quotes'), list = codes();
     if (!list.length) { body.innerHTML = '<tr><td colspan="5" class="empty-row">시세를 기다리는 중</td></tr>'; return; }
@@ -417,7 +420,8 @@
         <td>${p ? fmtPrice(p.globalPriceKrw) : '<span class="faint">—</span>'}</td>
         <td class="${p ? cls(p.premiumPercent) : ''}">${p ? pct(p.premiumPercent) : '—'}</td>
         <td class="${o ? cls(o.ratio - 1) : ''}">${o ? o.ratio.toFixed(2) : '—'}</td>
-        <td class="faint">${o ? o.spreadPercent.toFixed(3) + '%' : '—'}</td></tr>`; }).join('');
+        <td>${wallCell(o && o.bidWall, 'up')}</td>
+        <td>${wallCell(o && o.askWall, 'down')}</td></tr>`; }).join('');
     const any = [...premiums.values()][0];
     document.getElementById('fx').textContent = any ? `USD/KRW ${any.usdKrw.toLocaleString(undefined, { maximumFractionDigits: 1 })} · ${any.fxSource}` : '환율 대기';
   }

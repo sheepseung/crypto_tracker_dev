@@ -76,6 +76,6 @@ class OrderbookImbalanceTest {
 
     private static OrderbookImbalance snapshot(String code, double ratio, long ts) {
         return new OrderbookImbalance(code, ratio, 1.0, ratio, 100, 101, 1.0, 1_000_000, 500_000, 5, ts,
-                com.crypto.flink.util.KstTime.format(ts));
+                com.crypto.flink.util.KstTime.format(ts), null, null);
     }
 }
