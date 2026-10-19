@@ -51,6 +51,36 @@ public class IntensityBucketRepository {
         }
     }
 
+    public record Bucket(String code, long windowEnd, double buyAmount, double sellAmount, int tradeCount) {
+        public double netAmount() {
+            return buyAmount - sellAmount;
+        }
+
+        public double totalAmount() {
+            return buyAmount + sellAmount;
+        }
+
+        public double buyRatio() {
+            return TradeIntensity.buyRatioOf(buyAmount, sellAmount);
+        }
+
+        public double intensity() {
+            return TradeIntensity.intensityOf(buyAmount, sellAmount);
+        }
+    }
+
+    /** window_end 가 (from, to] 인 버킷을 종목·시간순으로. 그래프용. */
+    public List<Bucket> bucketsBetween(long fromExclusive, long toInclusive) {
+        return jdbc.query("""
+                SELECT code, window_end, buy_amount, sell_amount, trade_count FROM intensity_bucket
+                WHERE window_end > ? AND window_end <= ?
+                ORDER BY code, window_end
+                """,
+                (rs, i) -> new Bucket(rs.getString("code"), rs.getLong("window_end"), rs.getDouble("buy_amount"),
+                        rs.getDouble("sell_amount"), rs.getInt("trade_count")),
+                fromExclusive, toInclusive);
+    }
+
     /** window_end 가 (from, to] 인 버킷을 종목별로 합친다. 자정에 끝나는 버킷은 그 전날 것이다. */
     public List<CodeTotals> totalsBetween(long fromExclusive, long toInclusive) {
         return jdbc.query("""

@@ -4,264 +4,449 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Crypto Tracker</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root {
-    --bg: #0f1419; --panel: #171d26; --line: #2a3340; --text: #e6e9ee; --muted: #8b95a5;
-    --buy: #e5484d; --sell: #3b82f6; --accent: #f5a524;
+    --bg: #f2f4f6; --card: #ffffff; --line: #e5e8eb; --line-2: #f2f4f6;
+    --text: #191f28; --sub: #4e5968; --muted: #8b95a1; --faint: #b0b8c1;
+    --blue: #3182f6; --blue-soft: #e8f3ff; --red: #f04452; --red-soft: #fdecee; --green: #1cb15f; --orange: #ff8a00;
+    --btc: #f7931a; --eth: #5b6ee1; --doge: #a6892a;
+    --shadow: 0 1px 2px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.03);
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.5 -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; }
-  header { display: flex; align-items: center; gap: 16px; padding: 12px 20px; border-bottom: 1px solid var(--line); }
-  header h1 { font-size: 16px; margin: 0; }
-  #status { margin-left: auto; color: var(--muted); font-size: 12px; }
-  #status.on::before { content: "●"; color: #22c55e; margin-right: 6px; }
-  #status.off::before { content: "●"; color: var(--buy); margin-right: 6px; }
-  main { display: grid; grid-template-columns: 1fr 380px; gap: 16px; padding: 16px 20px; }
-  section { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 14px 16px; }
-  section h2 { font-size: 13px; color: var(--muted); margin: 0 0 10px; display: flex; align-items: center; gap: 12px; }
-  .tabs button { background: none; border: 1px solid var(--line); color: var(--muted); padding: 2px 10px; border-radius: 999px; cursor: pointer; font-size: 12px; }
-  .tabs button.active { color: var(--text); border-color: var(--accent); }
+  html, body { margin: 0; background: var(--bg); color: var(--text); }
+  body { font: 14px/1.5 "Pretendard Variable", Pretendard, -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif; letter-spacing: -0.01em; -webkit-font-smoothing: antialiased; }
+  .num { font-variant-numeric: tabular-nums; }
+  .up { color: var(--red); } .down { color: var(--blue); } .muted { color: var(--muted); } .faint { color: var(--faint); } .sub { color: var(--sub); }
+
+  header { display: flex; align-items: center; gap: 12px; padding: 14px 24px; background: var(--card); border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 3; }
+  header h1 { font-size: 17px; font-weight: 800; margin: 0; letter-spacing: -0.02em; }
+  header .right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 11px; border-radius: 999px; font-size: 12px; font-weight: 500; color: var(--sub); background: var(--line-2); }
+  .chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); }
+  .chip.on .dot { background: var(--green); box-shadow: 0 0 0 3px rgba(28,177,95,.18); }
+  .chip.off .dot { background: var(--red); }
+
+  main { max-width: 1240px; margin: 0 auto; padding: 20px 24px 48px; display: grid; gap: 20px; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .card { background: var(--card); border-radius: 20px; box-shadow: var(--shadow); padding: 20px 22px 18px; display: grid; gap: 14px; border-top: 4px solid var(--line); }
+  .card[data-coin="BTC"] { border-top-color: var(--btc); } .card[data-coin="ETH"] { border-top-color: var(--eth); } .card[data-coin="DOGE"] { border-top-color: var(--doge); }
+  .card .head { display: flex; align-items: center; gap: 10px; }
+  .card .logo { width: 34px; height: 34px; border-radius: 50%; background: var(--line-2); display: grid; place-items: center; font-weight: 800; font-size: 13px; color: var(--sub); overflow: hidden; flex: none; }
+  .card .logo img { width: 34px; height: 34px; display: block; }
+  .card .sym { font-size: 18px; font-weight: 800; }
+  .ic { width: 16px; height: 16px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; vertical-align: -3px; flex: none; }
+  nav.tabs .ic { width: 17px; height: 17px; margin-right: 6px; vertical-align: -3px; }
+  .panel h2 .ic { color: var(--muted); }
+  .evic { width: 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; flex: none; }
+  .evic .ic { width: 16px; height: 16px; }
+  .evic.LARGE_TRADE, .evic.LARGE_TRADE_BURST { background: #fff1e0; color: #b95f00; }
+  .evic.PRICE_SURGE { background: var(--red-soft); color: var(--red); }
+  .evic.PRICE_DROP { background: var(--blue-soft); color: var(--blue); }
+  .evic.VOLUME_SURGE { background: #efeafc; color: #6d4fd0; }
+  .evic.KIMCHI_PREMIUM { background: #e3f7ee; color: #0f8a5f; }
+  .evic.ORDERBOOK_IMBALANCE { background: #fdebdd; color: #c25a10; }
+  .empty-state { display: grid; place-items: center; gap: 8px; color: var(--faint); padding: 28px 0; }
+  .empty-state .ic { width: 28px; height: 28px; stroke-width: 1.5; color: var(--faint); }
+  .card .code { color: var(--faint); font-size: 12px; }
+  .card .price { margin-left: auto; text-align: right; }
+  .card .price b { display: block; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
+  .card .price small { font-size: 12px; color: var(--muted); }
+  .card .main { display: flex; align-items: flex-end; gap: 14px; }
+  .card .main .label { font-size: 12px; color: var(--muted); }
+  .card .main .value { font-size: 32px; font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; }
+  .card .main .side { margin-left: auto; text-align: right; font-size: 12px; color: var(--muted); line-height: 1.6; }
+  .bar { position: relative; height: 8px; background: var(--blue-soft); border-radius: 4px; overflow: hidden; }
+  .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--red); border-radius: 4px; }
+  .bar.thin { height: 5px; }
+  .card .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding-top: 12px; border-top: 1px solid var(--line-2); }
+  .card .stats .label { font-size: 11px; color: var(--muted); margin-bottom: 2px; }
+  .card .stats .v { font-size: 14px; font-weight: 700; }
+  .card.empty { place-items: center; color: var(--faint); min-height: 190px; border-top-color: var(--line); }
+
+  nav.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+  nav.tabs button { background: none; border: 0; font: inherit; font-size: 15px; font-weight: 600; color: var(--muted); padding: 10px 14px; cursor: pointer; position: relative; }
+  nav.tabs button.active { color: var(--text); }
+  nav.tabs button.active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; background: var(--blue); border-radius: 2px; }
+  nav.tabs button .n { display: inline-block; min-width: 18px; margin-left: 4px; padding: 0 5px; border-radius: 999px; background: var(--line-2); color: var(--sub); font-size: 11px; font-weight: 600; }
+  .view { display: none; grid-template-columns: 1fr; gap: 20px; }
+  .view.active { display: grid; }
+  .row-2 { display: grid; grid-template-columns: 1.6fr 1fr; gap: 20px; }
+  .row-eq { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+  .panel { background: var(--card); border-radius: 20px; box-shadow: var(--shadow); padding: 18px 22px 16px; }
+  .panel h2 { font-size: 14px; font-weight: 700; margin: 0 0 12px; display: flex; align-items: center; gap: 10px; letter-spacing: -0.01em; }
+  .panel h2 .hint { font-weight: 400; color: var(--muted); font-size: 12px; }
+  .panel h2 .right { margin-left: auto; font-weight: 400; color: var(--muted); font-size: 12px; }
+  .seg { display: inline-flex; gap: 2px; background: var(--line-2); border-radius: 999px; padding: 3px; }
+  .seg button { background: none; border: 0; color: var(--muted); padding: 3px 11px; border-radius: 999px; cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
+  .seg button.active { color: var(--text); background: var(--card); box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .chart { position: relative; height: 260px; }
+  .chart.tall { height: 300px; }
+  .legend { display: flex; gap: 14px; font-size: 12px; color: var(--sub); flex-wrap: wrap; }
+  .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+
   table { width: 100%; border-collapse: collapse; }
-  th, td { padding: 8px 6px; text-align: right; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
-  th { color: var(--muted); font-weight: 500; font-size: 12px; }
-  th:first-child, td:first-child { text-align: left; }
-  td.code { font-weight: 600; }
-  .buy { color: var(--buy); }
-  .sell { color: var(--sell); }
-  .bar { position: relative; height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; margin-top: 4px; }
-  .bar i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--buy); }
-  .muted { color: var(--muted); font-size: 12px; }
-  #events { list-style: none; margin: 0; padding: 0; max-height: 70vh; overflow: auto; }
-  #events li { padding: 8px 0; border-bottom: 1px solid var(--line); }
-  #events .when { color: var(--muted); font-size: 12px; }
-  .badge { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-right: 6px; border: 1px solid var(--line); }
-  .badge.LARGE_TRADE, .badge.LARGE_TRADE_BURST { border-color: var(--accent); color: var(--accent); }
-  .badge.PRICE_SURGE { border-color: var(--buy); color: var(--buy); }
-  .badge.PRICE_DROP { border-color: var(--sell); color: var(--sell); }
-  .badge.VOLUME_SURGE { border-color: #a78bfa; color: #a78bfa; }
-  .badge.KIMCHI_PREMIUM { border-color: #34d399; color: #34d399; }
-  .badge.ORDERBOOK_IMBALANCE { border-color: #fb923c; color: #fb923c; }
-  .empty { color: var(--muted); padding: 16px 0; text-align: center; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  th, td { padding: 10px 8px; text-align: right; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+  th { color: var(--muted); font-weight: 500; font-size: 11.5px; }
+  th:first-child, td:first-child { text-align: left; padding-left: 0; }
+  th:last-child, td:last-child { padding-right: 0; }
+  tr:last-child td { border-bottom: 0; }
+  td.sym { font-weight: 700; }
+  td .mini { display: inline-block; vertical-align: middle; width: 56px; margin-left: 8px; }
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 700; padding: 2px 7px; border-radius: 6px; background: var(--line-2); color: var(--sub); letter-spacing: 0; vertical-align: middle; }
+  .badge.LARGE_TRADE, .badge.LARGE_TRADE_BURST { color: #b95f00; background: #fff1e0; }
+  .badge.PRICE_SURGE { color: var(--red); background: var(--red-soft); }
+  .badge.PRICE_DROP { color: var(--blue); background: var(--blue-soft); }
+  .badge.VOLUME_SURGE { color: #6d4fd0; background: #efeafc; }
+  .badge.KIMCHI_PREMIUM { color: #0f8a5f; background: #e3f7ee; }
+  .badge.ORDERBOOK_IMBALANCE { color: #c25a10; background: #fdebdd; }
+  .badge.top { color: var(--orange); background: #fff4e5; margin-left: 6px; font-weight: 600; }
+  .filters { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .filters button { font: inherit; font-size: 12px; border: 1px solid var(--line); background: var(--card); color: var(--sub); border-radius: 999px; padding: 4px 11px; cursor: pointer; }
+  .filters button.active { border-color: var(--blue); color: var(--blue); background: var(--blue-soft); }
+
+  #events, #events-mini { list-style: none; margin: 0; padding: 0; }
+  #events-mini { max-height: 560px; overflow: auto; }
+  #events li, #events-mini li { display: grid; grid-template-columns: auto 1fr auto; gap: 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line-2); }
+  .msg .badge { margin-right: 6px; }
+  #events li:last-child, #events-mini li:last-child { border-bottom: 0; }
+  .msg { font-size: 13px; line-height: 1.45; color: var(--text); }
+  .when { color: var(--faint); font-size: 11.5px; white-space: nowrap; padding-top: 2px; }
+  .empty-row { color: var(--faint); text-align: center !important; padding: 26px 0 !important; }
+  .foot { color: var(--faint); font-size: 11.5px; margin: 10px 0 0; }
+  @media (max-width: 1024px) { .cards, .row-2, .row-eq { grid-template-columns: 1fr; } nav.tabs { overflow-x: auto; } }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-trend" viewBox="0 0 24 24"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+    <symbol id="i-bars" viewBox="0 0 24 24"><line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/></symbol>
+    <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></symbol>
+    <symbol id="i-up" viewBox="0 0 24 24"><line x1="7" y1="17" x2="17" y2="7"/><polyline points="7 7 17 7 17 17"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><line x1="7" y1="7" x2="17" y2="17"/><polyline points="17 7 17 17 7 17"/></symbol>
+    <symbol id="i-activity" viewBox="0 0 24 24"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></symbol>
+    <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></symbol>
+    <symbol id="i-layers" viewBox="0 0 24 24"><polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/></symbol>
+    <symbol id="i-coins" viewBox="0 0 24 24"><circle cx="8" cy="8" r="6"/><path d="M18.09 10.37A6 6 0 1 1 10.34 18"/><path d="M7 6h1v4"/><path d="m16.71 13.88.7.71-2.82 2.82"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><line x1="6" y1="12" x2="6" y2="12.01"/><line x1="18" y1="12" x2="18" y2="12.01"/></symbol>
+    <symbol id="i-inbox" viewBox="0 0 24 24"><polyline points="22 12 16 12 14 15 10 15 8 12 2 12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></symbol>
+    <symbol id="i-scale" viewBox="0 0 24 24"><path d="M16 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z"/><path d="M2 16l3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h18"/></symbol>
+  </defs>
+</svg>
 <header>
   <h1>Crypto Tracker</h1>
-  <span class="muted">업비트 체결 · BTC / ETH / DOGE</span>
-  <span id="status" class="off">연결 중</span>
+  <span class="muted" style="font-size:12px">업비트 체결 흐름 · BTC / ETH / DOGE</span>
+  <div class="right">
+    <span class="chip"><svg class="ic"><use href="#i-wallet"/></svg><span id="fx">환율 대기</span></span>
+    <span class="chip off" id="status"><span class="dot"></span><span>연결 중</span></span>
+  </div>
 </header>
+
 <main>
-  <section>
-    <h2>체결강도 <span class="tabs" id="tabs"></span> <span class="muted" id="updated"></span></h2>
-    <table>
-      <thead><tr><th>종목</th><th>체결강도</th><th>매수 비율</th><th>순매수</th><th>거래대금</th><th>체결</th><th>기준 시각</th></tr></thead>
-      <tbody id="rows"><tr><td colspan="7" class="empty">지표를 기다리는 중</td></tr></tbody>
-    </table>
-    <p class="muted">체결강도 = 매수 금액 ÷ 매도 금액 × 100. 100보다 크면 매수 우위. 5초마다 갱신.</p>
+  <section class="cards" id="cards"></section>
+
+  <nav class="tabs" id="nav">
+    <button data-view="flow" class="active"><svg class="ic"><use href="#i-trend"/></svg>흐름</button>
+    <button data-view="events"><svg class="ic"><use href="#i-bell"/></svg>이벤트 <span class="n" id="eventCount">0</span></button>
+    <button data-view="metrics"><svg class="ic"><use href="#i-bars"/></svg>지표</button>
+    <button data-view="summary"><svg class="ic"><use href="#i-calendar"/></svg>요약</button>
+  </nav>
+
+  <section class="view active" id="view-flow">
+    <div class="panel">
+      <h2><svg class="ic"><use href="#i-trend"/></svg>오늘 누적 순매수 <span class="hint">5분 버킷 합산 · 0시 기준</span><span class="right legend" id="cumLegend"></span></h2>
+      <div class="chart"><canvas id="cumChart"></canvas></div>
+      <p class="foot">매수 체결 금액 − 매도 체결 금액을 하루 동안 더한 값. 위로 가면 돈이 들어오고, 아래로 가면 빠져나간다.</p>
+    </div>
+    <div class="row-2">
+      <div class="panel">
+        <h2><svg class="ic"><use href="#i-activity"/></svg>매수 비율 추이 <span class="seg" id="flowCoin"></span> <span class="seg" id="flowHours"></span><span class="right">점은 감지 이벤트</span></h2>
+        <div class="chart tall"><canvas id="ratioChart"></canvas></div>
+        <p class="foot">5분 구간 매수 금액 ÷ 전체 금액. 50%가 중립. 이벤트 점에 마우스를 올리면 내용이 보인다.</p>
+      </div>
+      <div class="panel">
+        <h2><svg class="ic"><use href="#i-bell"/></svg>최근 이벤트</h2>
+        <ul id="events-mini"></ul>
+      </div>
+    </div>
   </section>
-  <section>
-    <h2>감지 이벤트 <span class="muted">대량 체결 · 급등락 · 거래량 급증 · 김프</span></h2>
-    <ul id="events"><li class="empty">아직 이벤트가 없습니다</li></ul>
+
+  <section class="view" id="view-events">
+    <div class="panel">
+      <h2><svg class="ic"><use href="#i-bell"/></svg>감지 이벤트 <span class="hint">최신순, 최대 100건</span></h2>
+      <div class="filters" id="filters"></div>
+      <ul id="events"></ul>
+    </div>
   </section>
-  <section>
-    <h2>김치 프리미엄 <span class="muted" id="fx"></span></h2>
-    <table>
-      <thead><tr><th>종목</th><th>업비트</th><th>바이낸스 (원화 환산)</th><th>프리미엄</th><th>갱신</th></tr></thead>
-      <tbody id="premiums"><tr><td colspan="5" class="empty">환율과 바이낸스 시세를 기다리는 중</td></tr></tbody>
-    </table>
-    <p class="muted">프리미엄 = 업비트가 ÷ (바이낸스 USDT가 × USD/KRW) − 1. 5초마다 갱신.</p>
+
+  <section class="view" id="view-metrics">
+    <div class="row-2">
+      <div class="panel">
+        <h2><svg class="ic"><use href="#i-bars"/></svg>체결강도 <span class="seg" id="tabs"></span> <span class="right" id="updated"></span></h2>
+        <table>
+          <thead><tr><th>종목</th><th>체결강도</th><th>매수 비율</th><th>순매수</th><th>거래대금</th><th>체결</th><th>기준</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+        <p class="foot">체결강도 = 매수 금액 ÷ 매도 금액 × 100. 100보다 크면 매수 우위. 5초마다 갱신.</p>
+      </div>
+      <div class="panel">
+        <h2><svg class="ic"><use href="#i-globe"/></svg>시세 · 호가 <span class="hint">김프 = 업비트 ÷ 바이낸스 환산 − 1</span></h2>
+        <table>
+          <thead><tr><th>종목</th><th>바이낸스 환산</th><th>김프</th><th>매수÷매도 잔량</th><th>스프레드</th></tr></thead>
+          <tbody id="quotes"></tbody>
+        </table>
+        <p class="foot">호가 비율이 3배 이상으로 10초 이어지면 이벤트.</p>
+      </div>
+    </div>
   </section>
-  <section>
-    <h2>호가 쏠림 <span class="muted">매수 ÷ 매도 잔량</span></h2>
-    <table>
-      <thead><tr><th>종목</th><th>비율</th><th>상위 5호가 매수</th><th>상위 5호가 매도</th><th>스프레드</th></tr></thead>
-      <tbody id="orderbooks"><tr><td colspan="5" class="empty">호가를 기다리는 중</td></tr></tbody>
-    </table>
-    <p class="muted">1보다 크면 매수벽. 3배 이상 쏠림이 10초 이어지면 이벤트.</p>
-  </section>
-  <section>
-    <h2>일별 요약 <span class="tabs" id="daytabs"></span> <span class="muted" id="daynote"></span></h2>
-    <table>
-      <thead><tr><th>종목</th><th>매수 금액</th><th>매도 금액</th><th>순매수</th><th>거래대금</th><th>체결강도</th><th>체결</th><th>수집률</th></tr></thead>
-      <tbody id="summaryrows"><tr><td colspan="8" class="empty">요약을 불러오는 중</td></tr></tbody>
-    </table>
-    <p class="muted" id="summaryevents"></p>
+
+  <section class="view" id="view-summary">
+    <div class="panel">
+      <h2><svg class="ic"><use href="#i-calendar"/></svg>일별 요약 <span class="seg" id="daytabs"></span> <span class="right" id="daynote"></span></h2>
+      <table>
+        <thead><tr><th>종목</th><th>매수</th><th>매도</th><th>순매수</th><th>거래대금</th><th>체결강도</th><th>체결</th><th>수집</th></tr></thead>
+        <tbody id="summaryrows"></tbody>
+      </table>
+      <p class="foot" id="summaryevents"></p>
+    </div>
   </section>
 </main>
+
 <script>
+  const ORDER = ['KRW-BTC', 'KRW-ETH', 'KRW-DOGE'];
+  const COLORS = { 'KRW-BTC': '#f7931a', 'KRW-ETH': '#5b6ee1', 'KRW-DOGE': '#a6892a' };
+  const TYPES = { LARGE_TRADE: ['대량 체결', '#b95f00', 'coins'], LARGE_TRADE_BURST: ['집중 체결', '#b95f00', 'zap'], PRICE_SURGE: ['급등', '#f04452', 'up'], PRICE_DROP: ['급락', '#3182f6', 'down'], VOLUME_SURGE: ['거래량 급증', '#6d4fd0', 'activity'], KIMCHI_PREMIUM: ['김프', '#0f8a5f', 'globe'], ORDERBOOK_IMBALANCE: ['호가 쏠림', '#c25a10', 'scale'] };
+  const LOGO = { 'KRW-BTC': 'btc', 'KRW-ETH': 'eth', 'KRW-DOGE': 'doge' };
+  const icon = name => `<svg class="ic"><use href="#i-${name}"/></svg>`;
+  const logo = code => { const id = LOGO[code]; const fb = sym(code).slice(0, 1); return `<span class="logo">${id ? `<img src="https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/${id}.svg" alt="${sym(code)}" onerror="this.replaceWith('${fb}')">` : fb}</span>`; };
+  const emptyState = (ic, text) => `<div class="empty-state">${icon(ic)}<span>${text}</span></div>`;
   const WINDOWS = [[60, '1분'], [300, '5분'], [900, '15분']];
+  const CARD_WINDOW = 300;
   const MAX_EVENTS = 100;
-  const metrics = new Map();   // key: code|window
-  let currentWindow = 300;
 
-  const fmtKrw = v => {
-    const a = Math.abs(v);
-    if (a >= 1e8) return (v / 1e8).toFixed(2) + '억';
-    if (a >= 1e4) return Math.round(v / 1e4).toLocaleString() + '만';
-    return Math.round(v).toLocaleString();
-  };
-  const fmtTime = iso => iso ? iso.slice(11, 19) : '';
+  const metrics = new Map(), premiums = new Map(), orderbooks = new Map();
+  let events = [];
+  let currentWindow = 300, summaryOffset = 0, flowCoin = 'KRW-BTC', flowHours = 6, eventFilter = 'ALL';
+  let cumChart, ratioChart;
+
+  const byOrder = (a, b) => (ORDER.indexOf(a) + 1 || 99) - (ORDER.indexOf(b) + 1 || 99) || a.localeCompare(b);
+  const sym = code => code.replace('KRW-', '');
+  const fmtKrw = v => { const a = Math.abs(v); if (a >= 1e8) return (v / 1e8).toFixed(2) + '억'; if (a >= 1e4) return Math.round(v / 1e4).toLocaleString() + '만'; return Math.round(v).toLocaleString(); };
+  const fmtPrice = v => v >= 1000 ? Math.round(v).toLocaleString() : v.toLocaleString(undefined, { maximumFractionDigits: 2 });
   const signed = v => (v > 0 ? '+' : '') + fmtKrw(v);
+  const pct = (v, d = 2) => (v > 0 ? '+' : '') + v.toFixed(d) + '%';
+  const hhmmss = iso => iso ? iso.slice(11, 19) : '';
+  const hhmm = t => new Date(t).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+  const cls = v => v >= 0 ? 'up' : 'down';
+  const kstDate = off => new Date(Date.now() + 9 * 3600e3 - off * 86400e3).toISOString().slice(0, 10);
+  const typeLabel = t => (TYPES[t] || [t])[0];
 
-  function renderTabs() {
-    const el = document.getElementById('tabs');
-    el.innerHTML = WINDOWS.map(([s, label]) =>
-      `<button data-w="${s}" class="${s === currentWindow ? 'active' : ''}">${label}</button>`).join('');
-    el.querySelectorAll('button').forEach(b => b.onclick = () => { currentWindow = +b.dataset.w; renderTabs(); renderRows(); });
+  function codes() {
+    const s = new Set([...metrics.values()].map(m => m.code));
+    premiums.forEach((_, c) => s.add(c)); orderbooks.forEach((_, c) => s.add(c));
+    return [...s].sort(byOrder);
   }
 
-  function renderRows() {
-    const rows = [...metrics.values()].filter(m => m.windowSeconds === currentWindow)
-      .sort((a, b) => b.netAmount - a.netAmount);
-    const body = document.getElementById('rows');
-    if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="empty">지표를 기다리는 중</td></tr>'; return; }
-    body.innerHTML = rows.map(m => `
-      <tr>
-        <td class="code">${m.code.replace('KRW-', '')}</td>
-        <td class="${m.intensity >= 100 ? 'buy' : 'sell'}">${m.intensity.toFixed(1)}</td>
-        <td>${m.buyRatio.toFixed(1)}%<div class="bar"><i style="width:${m.buyRatio}%"></i></div></td>
-        <td class="${m.netAmount >= 0 ? 'buy' : 'sell'}">${signed(m.netAmount)}</td>
-        <td>${fmtKrw(m.totalAmount)}</td>
-        <td>${m.tradeCount}</td>
-        <td class="muted">${fmtTime(m.windowEndAt)}</td>
-      </tr>`).join('');
-    const latest = rows.reduce((t, m) => Math.max(t, m.windowEnd), 0);
-    document.getElementById('updated').textContent = '갱신 ' + new Date(latest).toLocaleTimeString('ko-KR');
+  /* ---------- 상단 카드 ---------- */
+  function renderCards() {
+    const el = document.getElementById('cards');
+    const list = codes();
+    if (!list.length) { el.innerHTML = '<div class="card empty">지표를 기다리는 중</div>'.repeat(3); return; }
+    el.innerHTML = list.map(code => {
+      const m = metrics.get(code + '|' + CARD_WINDOW), p = premiums.get(code), o = orderbooks.get(code);
+      const price = p ? p.upbitPrice : (o ? o.bestBid : null);
+      return `
+      <article class="card" data-coin="${sym(code)}">
+        <div class="head">${logo(code)}<span class="sym">${sym(code)}</span><span class="code">${code}</span>
+          <div class="price num"><b>${price != null ? fmtPrice(price) : '—'}</b>
+            <small>${p ? `김프 <span class="${cls(p.premiumPercent)}">${pct(p.premiumPercent)}</span>` : '김프 대기'}</small></div>
+        </div>
+        <div>
+          <div class="main">
+            <div><div class="label">체결강도 · 5분</div><div class="value num ${m ? cls(m.intensity - 100) : 'faint'}">${m ? m.intensity.toFixed(1) : '—'}</div></div>
+            <div class="side num">${m ? `매수 ${m.buyRatio.toFixed(1)}%<br>체결 ${m.tradeCount}건` : '대기'}</div>
+          </div>
+          <div class="bar" style="margin-top:10px"><i style="width:${m ? m.buyRatio : 0}%"></i></div>
+        </div>
+        <div class="stats num">
+          <div><div class="label">순매수 · 5분</div><div class="v ${m ? cls(m.netAmount) : ''}">${m ? signed(m.netAmount) : '—'}</div></div>
+          <div><div class="label">거래대금 · 5분</div><div class="v">${m ? fmtKrw(m.totalAmount) : '—'}</div></div>
+          <div><div class="label">호가 매수÷매도</div><div class="v ${o ? cls(o.ratio - 1) : ''}">${o ? o.ratio.toFixed(2) : '—'}</div></div>
+        </div>
+      </article>`;
+    }).join('');
   }
 
-  function putMetric(m) {
-    const key = m.code + '|' + m.windowSeconds;
-    const cur = metrics.get(key);
-    if (!cur || m.windowEnd >= cur.windowEnd) metrics.set(key, m);
+  /* ---------- 탭 ---------- */
+  function seg(elId, items, current, onPick) {
+    const el = document.getElementById(elId);
+    el.innerHTML = items.map(([v, label]) => `<button data-v="${v}" class="${String(v) === String(current) ? 'active' : ''}">${label}</button>`).join('');
+    el.querySelectorAll('button').forEach(b => b.onclick = () => onPick(b.dataset.v));
   }
-
-  const premiums = new Map();  // key: code
-
-  function renderPremiums() {
-    const rows = [...premiums.values()].sort((a, b) => b.premiumPercent - a.premiumPercent);
-    const body = document.getElementById('premiums');
-    if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="empty">환율과 바이낸스 시세를 기다리는 중</td></tr>'; return; }
-    body.innerHTML = rows.map(p => `
-      <tr>
-        <td class="code">${p.code.replace('KRW-', '')}</td>
-        <td>${Math.round(p.upbitPrice).toLocaleString()}</td>
-        <td>${Math.round(p.globalPriceKrw).toLocaleString()}</td>
-        <td class="${p.premiumPercent >= 0 ? 'buy' : 'sell'}">${p.premiumPercent >= 0 ? '+' : ''}${p.premiumPercent.toFixed(2)}%</td>
-        <td class="muted">${fmtTime(p.updatedAtIso)}</td>
-      </tr>`).join('');
-    const any = rows[0];
-    document.getElementById('fx').textContent = `USD/KRW ${any.usdKrw.toLocaleString()} (${any.fxSource})`;
+  function showView(name) {
+    document.querySelectorAll('nav.tabs button').forEach(b => b.classList.toggle('active', b.dataset.view === name));
+    document.querySelectorAll('.view').forEach(v => v.classList.toggle('active', v.id === 'view-' + name));
+    location.hash = name;
+    if (name === 'flow') loadCharts();
+    if (name === 'summary') loadSummary();
   }
+  document.getElementById('nav').querySelectorAll('button').forEach(b => b.onclick = () => showView(b.dataset.view));
 
-  const orderbooks = new Map();  // key: code
-
-  function renderOrderbooks() {
-    const rows = [...orderbooks.values()].sort((a, b) => a.code.localeCompare(b.code));
-    const body = document.getElementById('orderbooks');
-    if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="empty">호가를 기다리는 중</td></tr>'; return; }
-    body.innerHTML = rows.map(o => `
-      <tr>
-        <td class="code">${o.code.replace('KRW-', '')}</td>
-        <td class="${o.ratio >= 1 ? 'buy' : 'sell'}">${o.ratio.toFixed(2)}<div class="bar"><i style="width:${Math.min(100, o.ratio / (1 + o.ratio) * 100)}%"></i></div></td>
-        <td class="buy">${fmtKrw(o.topBidAmount)}</td>
-        <td class="sell">${fmtKrw(o.topAskAmount)}</td>
-        <td class="muted">${o.spreadPercent.toFixed(3)}%</td>
-      </tr>`).join('');
+  /* ---------- 그래프 ---------- */
+  const gridColor = '#eef0f3';
+  function baseOptions(yFmt) {
+    return {
+      responsive: true, maintainAspectRatio: false, animation: false, interaction: { mode: 'nearest', intersect: false },
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: '#191f28', titleColor: '#fff', bodyColor: '#e5e8eb', padding: 10, cornerRadius: 10, displayColors: true } },
+      scales: {
+        x: { type: 'linear', grid: { color: gridColor }, border: { display: false }, ticks: { color: '#8b95a1', maxTicksLimit: 8, callback: v => hhmm(v) } },
+        y: { grid: { color: gridColor }, border: { display: false }, ticks: { color: '#8b95a1', callback: yFmt } }
+      }
+    };
   }
-
-  let summaryOffset = 0;  // 0 = 오늘, 1 = 어제
-
-  function kstDate(offsetDays) {
-    const d = new Date(Date.now() + 9 * 3600 * 1000 - offsetDays * 86400 * 1000);
-    return d.toISOString().slice(0, 10);
-  }
-
-  function renderDayTabs() {
-    const el = document.getElementById('daytabs');
-    el.innerHTML = [[0, '오늘'], [1, '어제']].map(([o, label]) =>
-      `<button data-o="${o}" class="${o === summaryOffset ? 'active' : ''}">${label}</button>`).join('');
-    el.querySelectorAll('button').forEach(b => b.onclick = () => { summaryOffset = +b.dataset.o; renderDayTabs(); loadSummary(); });
-  }
-
-  async function loadSummary() {
-    const date = kstDate(summaryOffset);
-    const body = document.getElementById('summaryrows');
+  async function loadCharts() {
     try {
-      const s = await (await fetch('/api/summary/daily?date=' + date)).json();
-      document.getElementById('daynote').textContent = `${s.date} KST${s.complete ? '' : ' · 하루치 미완'}`;
-      if (!s.codes.length) { body.innerHTML = '<tr><td colspan="8" class="empty">저장된 5분 버킷이 없습니다</td></tr>'; }
-      else body.innerHTML = s.codes.map(c => `
-        <tr>
-          <td class="code">${c.code.replace('KRW-', '')}${c.code === s.topNetBuyCode ? ' <span class="badge">순매수 1위</span>' : ''}${c.code === s.topVolumeCode ? ' <span class="badge">거래대금 1위</span>' : ''}</td>
-          <td class="buy">${fmtKrw(c.buyAmount)}</td>
-          <td class="sell">${fmtKrw(c.sellAmount)}</td>
-          <td class="${c.netAmount >= 0 ? 'buy' : 'sell'}">${signed(c.netAmount)}</td>
-          <td>${fmtKrw(c.totalAmount)}</td>
-          <td>${c.intensity.toFixed(1)}</td>
-          <td>${c.tradeCount.toLocaleString()}</td>
-          <td class="muted">${(c.coverage * 100).toFixed(0)}%</td>
-        </tr>`).join('');
-      const types = Object.entries(s.eventsByType).map(([t, n]) => `${t} ${n}`).join(' · ');
-      document.getElementById('summaryevents').textContent = s.eventCount
-        ? `감지 이벤트 ${s.eventCount}건: ${types}` : '감지 이벤트 없음';
-    } catch (e) {
-      body.innerHTML = '<tr><td colspan="8" class="empty">요약을 불러오지 못했습니다</td></tr>';
-    }
+      const [cum, hist, evs] = await Promise.all([
+        fetch('/api/history/cumulative').then(r => r.json()),
+        fetch('/api/history?hours=' + flowHours).then(r => r.json()),
+        fetch(`/api/events?code=${flowCoin}&since=${Date.now() - flowHours * 3600e3}&limit=200`).then(r => r.json())
+      ]);
+      drawCumulative(cum); drawRatio(hist[flowCoin] || [], evs);
+    } catch (e) { /* 다음 주기에 다시 */ }
+  }
+  function drawCumulative(byCode) {
+    const codesSorted = Object.keys(byCode).sort(byOrder);
+    const datasets = codesSorted.map(code => ({ label: sym(code), data: byCode[code].map(p => ({ x: p.t, y: p.cumulativeNet })), borderColor: COLORS[code] || '#8b95a1', borderWidth: 2, pointRadius: 0, tension: 0.25 }));
+    document.getElementById('cumLegend').innerHTML = codesSorted.map(c => `<span><i style="background:${COLORS[c] || '#8b95a1'}"></i>${sym(c)}</span>`).join('');
+    const opts = baseOptions(v => fmtKrw(v));
+    opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => ` ${i.dataset.label} ${signed(i.parsed.y)}` };
+    opts.plugins.zeroLine = true;
+    const data = { datasets };
+    if (!cumChart) cumChart = new Chart(document.getElementById('cumChart'), { type: 'line', data, options: opts, plugins: [zeroLinePlugin] });
+    else { cumChart.data = data; cumChart.update('none'); }
+  }
+  const zeroLinePlugin = { id: 'zeroLine', afterDraw(c) { const y = c.scales.y.getPixelForValue(0); if (!isFinite(y)) return; const ctx = c.ctx; ctx.save(); ctx.strokeStyle = '#b0b8c1'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(c.chartArea.left, y); ctx.lineTo(c.chartArea.right, y); ctx.stroke(); ctx.restore(); } };
+  const midLinePlugin = { id: 'midLine', afterDraw(c) { const y = c.scales.y.getPixelForValue(50); const ctx = c.ctx; ctx.save(); ctx.strokeStyle = '#b0b8c1'; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(c.chartArea.left, y); ctx.lineTo(c.chartArea.right, y); ctx.stroke(); ctx.restore(); } };
+  function drawRatio(points, evs) {
+    const line = { label: '매수 비율', data: points.map(p => ({ x: p.t, y: p.buyRatio, p })), borderColor: COLORS[flowCoin] || '#3182f6', backgroundColor: 'rgba(49,130,246,.08)', borderWidth: 2, pointRadius: 0, tension: 0.25, fill: { target: { value: 50 } } };
+    const nearest = t => { let best = null; for (const p of points) if (!best || Math.abs(p.t - t) < Math.abs(best.t - t)) best = p; return best ? best.buyRatio : 50; };
+    const marks = { label: '이벤트', type: 'scatter', data: evs.map(e => ({ x: e.eventTime, y: nearest(e.eventTime), e })), pointRadius: 6, pointHoverRadius: 8, pointBackgroundColor: evs.map(e => (TYPES[e.type] || [0, '#8b95a1'])[1]), pointBorderColor: '#fff', pointBorderWidth: 2 };
+    const opts = baseOptions(v => v + '%');
+    opts.scales.y.min = 0; opts.scales.y.max = 100;
+    opts.plugins.tooltip.callbacks = { title: items => hhmm(items[0].parsed.x), label: i => i.raw.e ? ` ${typeLabel(i.raw.e.type)} · ${i.raw.e.message}` : ` 매수 비율 ${i.parsed.y.toFixed(1)}% · 거래대금 ${fmtKrw(i.raw.p.totalAmount)}` };
+    const data = { datasets: [line, marks] };
+    if (!ratioChart) ratioChart = new Chart(document.getElementById('ratioChart'), { type: 'line', data, options: opts, plugins: [midLinePlugin] });
+    else { ratioChart.data = data; ratioChart.update('none'); }
+  }
+  function renderFlowControls() {
+    seg('flowCoin', ORDER.map(c => [c, sym(c)]), flowCoin, v => { flowCoin = v; renderFlowControls(); loadCharts(); });
+    seg('flowHours', [[3, '3시간'], [6, '6시간'], [24, '24시간']], flowHours, v => { flowHours = +v; renderFlowControls(); loadCharts(); });
   }
 
+  /* ---------- 지표 표 ---------- */
+  function renderTabs() { seg('tabs', WINDOWS, currentWindow, v => { currentWindow = +v; renderTabs(); renderRows(); }); }
+  function renderRows() {
+    const rows = [...metrics.values()].filter(m => m.windowSeconds === currentWindow).sort((a, b) => b.netAmount - a.netAmount);
+    const body = document.getElementById('rows');
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="7" class="empty-row">지표를 기다리는 중</td></tr>'; return; }
+    body.innerHTML = rows.map(m => `
+      <tr class="num"><td class="sym">${sym(m.code)}</td>
+        <td class="${cls(m.intensity - 100)}">${m.intensity.toFixed(1)}</td>
+        <td>${m.buyRatio.toFixed(1)}%<span class="bar thin mini"><i style="width:${m.buyRatio}%"></i></span></td>
+        <td class="${cls(m.netAmount)}">${signed(m.netAmount)}</td><td>${fmtKrw(m.totalAmount)}</td><td>${m.tradeCount}</td>
+        <td class="faint">${hhmmss(m.windowEndAt)}</td></tr>`).join('');
+    const latest = rows.reduce((t, m) => Math.max(t, m.windowEnd), 0);
+    document.getElementById('updated').textContent = new Date(latest).toLocaleTimeString('ko-KR') + ' 갱신';
+  }
+  function renderQuotes() {
+    const body = document.getElementById('quotes'), list = codes();
+    if (!list.length) { body.innerHTML = '<tr><td colspan="5" class="empty-row">시세를 기다리는 중</td></tr>'; return; }
+    body.innerHTML = list.map(code => { const p = premiums.get(code), o = orderbooks.get(code); return `
+      <tr class="num"><td class="sym">${sym(code)}</td>
+        <td>${p ? fmtPrice(p.globalPriceKrw) : '<span class="faint">—</span>'}</td>
+        <td class="${p ? cls(p.premiumPercent) : ''}">${p ? pct(p.premiumPercent) : '—'}</td>
+        <td class="${o ? cls(o.ratio - 1) : ''}">${o ? o.ratio.toFixed(2) : '—'}</td>
+        <td class="faint">${o ? o.spreadPercent.toFixed(3) + '%' : '—'}</td></tr>`; }).join('');
+    const any = [...premiums.values()][0];
+    document.getElementById('fx').textContent = any ? `USD/KRW ${any.usdKrw.toLocaleString(undefined, { maximumFractionDigits: 1 })} · ${any.fxSource}` : '환율 대기';
+  }
+  function putMetric(m) { const key = m.code + '|' + m.windowSeconds, cur = metrics.get(key); if (!cur || m.windowEnd >= cur.windowEnd) metrics.set(key, m); }
+
+  /* ---------- 이벤트 ---------- */
   function eventItem(e) {
     const li = document.createElement('li');
-    li.innerHTML = `<div class="when">${e.eventTimeAt ? e.eventTimeAt.slice(0, 19).replace('T', ' ') : ''}</div>
-      <span class="badge ${e.type}">${e.type}</span>${e.message || ''}`;
+    const at = e.eventTimeAt || '', today = kstDate(0) === at.slice(0, 10);
+    const ic = (TYPES[e.type] || [0, 0, 'bell'])[2];
+    li.innerHTML = `<span class="evic ${e.type}">${icon(ic)}</span><span class="msg"><span class="badge ${e.type}">${typeLabel(e.type)}</span>${e.message || ''}</span><span class="when">${today ? at.slice(11, 19) : at.slice(5, 16).replace('T', ' ')}</span>`;
     return li;
   }
-
-  function setEvents(list) {
-    const ul = document.getElementById('events');
-    ul.innerHTML = '';
-    if (!list.length) { ul.innerHTML = '<li class="empty">아직 이벤트가 없습니다</li>'; return; }
-    list.forEach(e => ul.appendChild(eventItem(e)));
+  function renderEvents() {
+    const full = document.getElementById('events'), mini = document.getElementById('events-mini');
+    const filtered = events.filter(e => eventFilter === 'ALL' || e.type === eventFilter);
+    full.innerHTML = ''; mini.innerHTML = '';
+    if (!filtered.length) full.innerHTML = `<li style="display:block">${emptyState('inbox', '이벤트가 없습니다')}</li>`;
+    filtered.forEach(e => full.appendChild(eventItem(e)));
+    if (!events.length) mini.innerHTML = `<li style="display:block">${emptyState('inbox', '아직 이벤트가 없습니다')}</li>`;
+    events.slice(0, 12).forEach(e => mini.appendChild(eventItem(e)));
+    document.getElementById('eventCount').textContent = events.length;
+    const counts = {}; events.forEach(e => counts[e.type] = (counts[e.type] || 0) + 1);
+    const items = [['ALL', `전체 ${events.length}`], ...Object.keys(TYPES).filter(t => counts[t]).map(t => [t, `${typeLabel(t)} ${counts[t]}`])];
+    const f = document.getElementById('filters');
+    f.innerHTML = items.map(([v, label]) => `<button data-v="${v}" class="${v === eventFilter ? 'active' : ''}">${label}</button>`).join('');
+    f.querySelectorAll('button').forEach(b => b.onclick = () => { eventFilter = b.dataset.v; renderEvents(); });
   }
 
-  function prependEvent(e) {
-    const ul = document.getElementById('events');
-    const empty = ul.querySelector('.empty');
-    if (empty) empty.remove();
-    ul.prepend(eventItem(e));
-    while (ul.children.length > MAX_EVENTS) ul.lastChild.remove();
+  /* ---------- 일별 요약 ---------- */
+  function renderDayTabs() { seg('daytabs', [[0, '오늘'], [1, '어제']], summaryOffset, v => { summaryOffset = +v; renderDayTabs(); loadSummary(); }); }
+  async function loadSummary() {
+    const body = document.getElementById('summaryrows');
+    try {
+      const s = await (await fetch('/api/summary/daily?date=' + kstDate(summaryOffset))).json();
+      document.getElementById('daynote').textContent = `${s.date}${s.complete ? '' : ' · 하루치 미완'}`;
+      if (!s.codes.length) body.innerHTML = '<tr><td colspan="8" class="empty-row">아직 저장된 5분 버킷이 없습니다</td></tr>';
+      else body.innerHTML = [...s.codes].sort((a, b) => byOrder(a.code, b.code)).map(c => `
+        <tr class="num"><td class="sym">${sym(c.code)}${c.code === s.topNetBuyCode ? '<span class="badge top">순매수 1위</span>' : ''}${c.code === s.topVolumeCode ? '<span class="badge top">거래대금 1위</span>' : ''}</td>
+          <td class="up">${fmtKrw(c.buyAmount)}</td><td class="down">${fmtKrw(c.sellAmount)}</td>
+          <td class="${cls(c.netAmount)}">${signed(c.netAmount)}</td><td>${fmtKrw(c.totalAmount)}</td>
+          <td class="${cls(c.intensity - 100)}">${c.intensity.toFixed(1)}</td><td>${c.tradeCount.toLocaleString()}</td>
+          <td class="faint">${(c.coverage * 100).toFixed(0)}%</td></tr>`).join('');
+      const types = Object.entries(s.eventsByType).map(([t, n]) => `${typeLabel(t)} ${n}`).join(' · ');
+      document.getElementById('summaryevents').textContent = s.eventCount ? `감지 이벤트 ${s.eventCount}건 · ${types}` : '감지 이벤트 없음';
+    } catch (e) { body.innerHTML = '<tr><td colspan="8" class="empty-row">요약을 불러오지 못했습니다</td></tr>'; }
   }
 
+  /* ---------- 실시간 연결 ---------- */
   function connect() {
     const status = document.getElementById('status');
+    const setStatus = (on, text) => { status.className = 'chip ' + (on ? 'on' : 'off'); status.lastElementChild.textContent = text; };
     const es = new EventSource('/api/stream');
-    es.onopen = () => { status.textContent = '실시간 연결'; status.className = 'on'; };
-    es.onerror = () => { status.textContent = '연결 끊김, 재시도 중'; status.className = 'off'; };
+    es.onopen = () => setStatus(true, '실시간');
+    es.onerror = () => setStatus(false, '재연결 중');
     es.addEventListener('snapshot', ev => {
       const s = JSON.parse(ev.data);
-      metrics.clear();
-      s.metrics.forEach(putMetric);
-      renderRows();
-      setEvents(s.events);
-      premiums.clear();
-      (s.premiums || []).forEach(p => premiums.set(p.code, p));
-      renderPremiums();
-      orderbooks.clear();
-      (s.orderbooks || []).forEach(o => orderbooks.set(o.code, o));
-      renderOrderbooks();
+      metrics.clear(); s.metrics.forEach(putMetric);
+      premiums.clear(); (s.premiums || []).forEach(p => premiums.set(p.code, p));
+      orderbooks.clear(); (s.orderbooks || []).forEach(o => orderbooks.set(o.code, o));
+      events = s.events || [];
+      renderCards(); renderRows(); renderQuotes(); renderEvents();
     });
-    es.addEventListener('orderbook', ev => { const o = JSON.parse(ev.data); orderbooks.set(o.code, o); renderOrderbooks(); });
+    es.addEventListener('metric', ev => { putMetric(JSON.parse(ev.data)); renderCards(); renderRows(); });
+    es.addEventListener('premium', ev => { const p = JSON.parse(ev.data); premiums.set(p.code, p); renderCards(); renderQuotes(); });
+    es.addEventListener('orderbook', ev => { const o = JSON.parse(ev.data); orderbooks.set(o.code, o); renderCards(); renderQuotes(); });
+    es.addEventListener('event', ev => { events.unshift(JSON.parse(ev.data)); events = events.slice(0, MAX_EVENTS); renderEvents(); loadSummary(); loadCharts(); });
     es.addEventListener('summary', () => loadSummary());
-    es.addEventListener('event', () => loadSummary());
-    es.addEventListener('metric', ev => { putMetric(JSON.parse(ev.data)); renderRows(); });
-    es.addEventListener('premium', ev => { const p = JSON.parse(ev.data); premiums.set(p.code, p); renderPremiums(); });
-    es.addEventListener('event', ev => prependEvent(JSON.parse(ev.data)));
   }
 
-  renderTabs();
-  renderDayTabs();
-  loadSummary();
-  setInterval(loadSummary, 5 * 60 * 1000);
+  renderTabs(); renderDayTabs(); renderFlowControls();
+  renderCards(); renderRows(); renderQuotes(); renderEvents();
+  showView(['flow', 'events', 'metrics', 'summary'].includes(location.hash.slice(1)) ? location.hash.slice(1) : 'flow');
+  loadSummary(); setInterval(loadSummary, 5 * 60 * 1000); setInterval(loadCharts, 60 * 1000);
   connect();
 </script>
 </body>

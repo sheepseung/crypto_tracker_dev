@@ -312,6 +312,8 @@ GET /api/events?code=&type=&since=&limit=50    # 감지 이벤트 최신순. sin
 GET /api/premium                               # 종목별 김치 프리미엄 최신 값
 GET /api/orderbook                             # 종목별 호가 쏠림 최신 스냅샷
 GET /api/summary/daily?date=2026-10-19         # 하루(KST) 요약. 비우면 오늘
+GET /api/history?code=KRW-BTC&hours=6          # 최근 N시간 5분 버킷 (매수 비율·순매수 추이 그래프용)
+GET /api/history/cumulative?date=              # 하루 누적 순매수·거래대금, 5분마다 한 점
 ```
 
 Swagger UI: http://localhost:8082/swagger-ui/index.html
@@ -334,7 +336,7 @@ curl -X PUT localhost:8082/api/rules/KRW-DOGE -H 'Content-Type: application/json
 
 ### 5. 대시보드 (static/index.html + SSE)
 
-http://localhost:8082/ 에서 종목별 체결강도 표(1분·5분·15분 전환)와 감지 이벤트 목록을 본다. 페이지는 `GET /api/stream`(SSE)에 붙어 연결 직후 `snapshot`(현재 지표 전체와 최근 이벤트 50건)을 받고, 이후 `metric`·`event`가 올 때마다 바로 갱신한다. 15초마다 빈 주석을 보내 연결을 유지한다.
+http://localhost:8082/ 한 장이다. 상단에 종목 카드(현재가·김프·5분 체결강도·순매수·거래대금·호가 비율)가 항상 보이고, 아래는 탭 넷이다. **흐름**(오늘 누적 순매수 그래프, 종목별 매수 비율 추이 그래프 위에 감지 이벤트 점), **이벤트**(종류별 필터), **지표**(체결강도 표 1·5·15분, 시세·호가 표), **요약**(일별, 오늘·어제). 페이지는 `GET /api/stream`(SSE)에 붙어 연결 직후 `snapshot`을 받고 이후 `metric`·`event`·`premium`·`orderbook`이 올 때마다 바로 갱신한다. 그래프는 `/api/history`를 1분마다 다시 읽는다. 글꼴은 Pretendard, 차트는 Chart.js, 코인 로고는 cryptocurrency-icons 를 CDN 에서 받는다(없으면 글자로 대체).
 
 메신저 전송은 범위 밖이다.
 

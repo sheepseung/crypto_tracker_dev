@@ -40,6 +40,12 @@ class DailySummaryServiceTest {
         assertFalse(buckets.saveIfAligned(window("KRW-BTC", 60, midnight + 600_000, 1, 1, 1)), "1분 윈도우");
 
         assertEquals(1, buckets.totalsBetween(midnight, midnight + 86_400_000).size());
+
+        IntensityBucketRepository.Bucket b = buckets.bucketsBetween(midnight, midnight + 86_400_000).get(0);
+        assertEquals(midnight + 300_000, b.windowEnd());
+        assertEquals(5, b.netAmount(), 1e-9);
+        assertEquals(15, b.totalAmount(), 1e-9);
+        assertEquals(200.0, b.intensity(), 1e-9);
     }
 
     @Test
